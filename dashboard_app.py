@@ -676,6 +676,64 @@ def teste_normalidade_manual(data):
     p_value = max(0, 1 - (abs(skewness) + abs(kurtosis)) / 2)
     return p_value
 
+# NOVA FUNÇÃO: Criar gráfico de dispersão com regressão usando apenas numpy
+def criar_dispersao_regressao(dados, eixo_x, eixo_y, color_by=None):
+    """Cria gráfico de dispersão com linha de regressão usando apenas numpy"""
+    try:
+        # Filtrar dados válidos
+        mask = ~dados[eixo_x].isna() & ~dados[eixo_y].isna()
+        dados_filtrados = dados[mask]
+        
+        if len(dados_filtrados) < 2:
+            st.warning("Dados insuficientes para criar gráfico de dispersão")
+            return go.Figure()
+        
+        # Criar gráfico base
+        if color_by and color_by in dados.columns:
+            fig = px.scatter(dados_filtrados, x=eixo_x, y=eixo_y, color=color_by,
+                            title=f"{eixo_y} vs {eixo_x}")
+        else:
+            fig = px.scatter(dados_filtrados, x=eixo_x, y=eixo_y,
+                            title=f"{eixo_y} vs {eixo_x}")
+        
+        # Calcular regressão linear
+        x_vals = dados_filtrados[eixo_x].values
+        y_vals = dados_filtrados[eixo_y].values
+        
+        slope, intercept, r_squared = calcular_regressao_linear(x_vals, y_vals)
+        
+        if slope is not None and intercept is not None:
+            # Adicionar linha de regressão
+            x_range = np.linspace(x_vals.min(), x_vals.max(), 100)
+            y_pred = slope * x_range + intercept
+            
+            fig.add_trace(go.Scatter(
+                x=x_range,
+                y=y_pred,
+                mode='lines',
+                name=f'Regressão (R² = {r_squared:.4f})',
+                line=dict(color='red', width=3)
+            ))
+            
+            # Adicionar equação
+            fig.add_annotation(
+                x=0.05,
+                y=0.95,
+                xref="paper",
+                yref="paper",
+                text=f"y = {slope:.4f}x + {intercept:.4f}<br>R² = {r_squared:.4f}",
+                showarrow=False,
+                bgcolor="white",
+                bordercolor="black",
+                borderwidth=1
+            )
+        
+        return fig
+        
+    except Exception as e:
+        st.error(f"Erro ao criar gráfico de dispersão: {str(e)}")
+        return go.Figure()
+
 def main():
     st.title("🏭 Dashboard de Análise de Processos Industriais")
     
@@ -856,7 +914,7 @@ def main():
         "🔍 Dispersão & Regressão",
         "🎯 Carta de Controle",
         "📈 Controle Estatístico",
-        "📊 Análise de Capabilidade",  # NOVA ABA
+        "📊 Análise de Capabilidade",
         "📋 Resumo Executivo"
     ])
 
@@ -1170,76 +1228,50 @@ def main():
                     dados_scatter = dados_scatter[~outliers_mask]
                     st.info(f"📊 {outliers_mask.sum()} outliers removidos para visualização")
                 
-                # Gráfico de dispersão
-                try:
-                    if color_by and color_by in dados_scatter.columns:
-                        fig = px.scatter(dados_scatter, x=eixo_x, y=eixo_y, color=color_by,
-                                        title=f"{eixo_y} vs {eixo_x} (Colorido por {color_by})")
-                    else:
-                        fig = px.scatter(dados_scatter, x=eixo_x, y=eixo_y, 
-                                        title=f"{eixo_y} vs {eixo_x}")
+                # Usar a NOVA função para criar gráfico de dispersão
+                fig = criar_dispersao_regressao(dados_scatter, eixo_x, eixo_y, color_by if color_by else None)
+                
+                if fig:
+                    st.plotly_chart(fig, use_container_width=True)
                     
-                    # Calcular regressão linear manualmente
-                    if mostrar_regressao:
+                    # Estatísticas de correlação
+                    st.subheader("📊 Estatísticas de Correlação e Regressão")
+                    
+                    try:
+                        correlacao_pearson = dados_scatter[eixo_x].corr(dados_scatter[eixo_y])
+                        correlacao_spearman = dados_scatter[eixo_x].corr(dados_scatter[eixo_y], method='spearman')
+                        
+                        # Calcular regressão para obter R²
                         slope, intercept, r_squared = calcular_regressao_linear(
                             dados_scatter[eixo_x].values,
                             dados_scatter[eixo_y].values
                         )
                         
-                        # Adicionar linha de regressão manualmente se possível
-                        if slope is not None and intercept is not None:
-                            x_range = np.linspace(dados_scatter[eixo_x].min(), dados_scatter[eixo_x].max(), 100)
-                            y_pred = slope * x_range + intercept
+                        col_stat1, col_stat2, col_stat3, col_stat4 = st.columns(4)
+                        with col_stat1:
+                            st.metric("Correlação (Pearson)", f"{correlacao_pearson:.4f}")
+                        with col_stat2:
+                            st.metric("Correlação (Spearman)", f"{correlacao_spearman:.4f}")
+                        with col_stat3:
+                            if r_squared is not None:
+                                st.metric("Coeficiente R²", f"{r_squared:.4f}")
+                        with col_stat4:
+                            if slope is not None:
+                                st.metric("Inclinação", f"{slope:.4f}")
+                        
+                        # Interpretação da correlação
+                        st.subheader("🔍 Interpretação da Correlação")
+                        correlacao_abs = abs(correlacao_pearson)
+                        
+                        if correlacao_abs > 0.7:
+                            st.success("**Forte correlação** - Relação muito significativa entre as variáveis")
+                        elif correlacao_abs > 0.3:
+                            st.warning("**Correlação moderada** - Relação moderada entre as variáveis")
+                        else:
+                            st.info("**Fraca ou nenhuma correlação** - Pouca relação entre as variáveis")
                             
-                            fig.add_trace(go.Scatter(
-                                x=x_range,
-                                y=y_pred,
-                                mode='lines',
-                                name='Linha de Regressão',
-                                line=dict(color='red', width=3)
-                            ))
-                            
-                            # Adicionar equação da reta
-                            equation = f"y = {slope:.4f}x + {intercept:.4f}"
-                            r2_text = f"R² = {r_squared:.4f}"
-                            
-                            fig.add_annotation(
-                                x=0.05,
-                                y=0.95,
-                                xref="paper",
-                                yref="paper",
-                                text=f"<b>{equation}<br>{r2_text}</b>",
-                                showarrow=False,
-                                font=dict(size=14, color="black"),
-                                bgcolor="white",
-                                bordercolor="black",
-                                borderwidth=2,
-                                borderpad=4,
-                                opacity=0.8
-                            )
-                    
-                    st.plotly_chart(fig, use_container_width=True)
-                    
-                    # Estatísticas de correlação COMPLETAS
-                    st.subheader("📊 Estatísticas de Correlação e Regressão")
-                    
-                    correlacao_pearson = dados_scatter[eixo_x].corr(dados_scatter[eixo_y])
-                    correlacao_spearman = dados_scatter[eixo_x].corr(dados_scatter[eixo_y], method='spearman')
-                    
-                    col_stat1, col_stat2, col_stat3, col_stat4 = st.columns(4)
-                    with col_stat1:
-                        st.metric("Correlação (Pearson)", f"{correlacao_pearson:.4f}")
-                    with col_stat2:
-                        st.metric("Correlação (Spearman)", f"{correlacao_spearman:.4f}")
-                    with col_stat3:
-                        if r_squared is not None:
-                            st.metric("Coeficiente R²", f"{r_squared:.4f}")
-                    with col_stat4:
-                        if slope is not None:
-                            st.metric("Inclinação", f"{slope:.4f}")
-                
-                except Exception as e:
-                    st.error(f"Erro ao criar gráfico de dispersão: {str(e)}")
+                    except Exception as e:
+                        st.error(f"Erro ao calcular estatísticas: {str(e)}")
 
     # ========== ABA 5: CARTA DE CONTROLE ==========
     with tab5:
@@ -1567,7 +1599,7 @@ def main():
                 except Exception as e:
                     st.error(f"Erro ao criar gráfico de controle: {str(e)}")
 
-    # ========== NOVA ABA 7: ANÁLISE DE CAPABILIDADE ==========
+    # ========== ABA 7: ANÁLISE DE CAPABILIDADE ==========
     with tab7:
         st.header("📊 Análise de Capabilidade do Processo")
         

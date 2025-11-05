@@ -70,7 +70,7 @@ def detectar_outliers_zscore(dados, coluna, threshold=3):
     outliers_mask = z_scores > threshold
     return dados[outliers_mask], outliers_mask
 
-# ========== NOVAS FUNÇÕES PARA CARTA DE CONTROLE ==========
+# ========== FUNÇÕES PARA CARTA DE CONTROLE ==========
 
 def criar_carta_controle_xbar_s(dados, coluna_valor, coluna_grupo=None, tamanho_amostra=5):
     """Cria carta de controle X-bar e S"""
@@ -239,12 +239,15 @@ def plotar_carta_controle(valores, limites, titulo, tipo="individual"):
         xaxis_title="Amostra/Grupo",
         yaxis_title="Valor",
         showlegend=True,
-        height=400
+        height=500,  # Aumentado para 500px
+        title_font_size=20,
+        xaxis_title_font_size=16,
+        yaxis_title_font_size=16
     )
     
     return fig, pontos_fora.sum()
 
-# ========== FIM DAS NOVAS FUNÇÕES ==========
+# ========== FIM DAS FUNÇÕES DE CARTA DE CONTROLE ==========
 
 # Função para calcular regressão linear manualmente
 def calcular_regressao_linear(x, y):
@@ -609,13 +612,13 @@ def main():
                                      key=generate_unique_key("lie", coluna_limites))
                 st.session_state.lie_values[coluna_limites] = lie
 
-    # Abas principais - AGORA COM CARTA DE CONTROLE
+    # Abas principais
     tab1, tab2, tab3, tab4, tab5, tab6, tab7 = st.tabs([
         "📈 Análise Temporal", 
         "📊 Estatística Detalhada", 
         "🔥 Correlações", 
         "🔍 Dispersão & Regressão",
-        "🎯 Carta de Controle",  # NOVA ABA
+        "🎯 Carta de Controle",
         "📈 Controle Estatístico",
         "📋 Resumo Executivo"
     ])
@@ -1001,298 +1004,250 @@ def main():
                 except Exception as e:
                     st.error(f"Erro ao criar gráfico de dispersão: {str(e)}")
 
-# ========== ABA 5: CARTA DE CONTROLE ==========
-with tab5:
-    st.header("🎯 Cartas de Controle Estatístico")
-    
-    st.markdown("""
-    **Cartas de Controle** são ferramentas visuais para monitorar a estabilidade de processos.
-    Selecione o tipo de carta e configure os parâmetros:
-    """)
-    
-    # Seleção do tipo de carta
-    tipo_carta = st.selectbox(
-        "Selecione o tipo de Carta de Controle:",
-        [
-            "X-bar e S (Variáveis Contínuas - Com Grupos)",
-            "Individuais e Amplitude Móvel (I-MR)",
-            "P (Proporção de Defeituosos)",
-            "C (Número de Defeitos)"
-        ],
-        key=generate_unique_key("tipo_carta", "tab5")
-    )
-    
-    col_config1, col_config2 = st.columns(2)
-    
-    with col_config1:
-        if tipo_carta in ["X-bar e S (Variáveis Contínuas - Com Grupos)", "Individuais e Amplitude Móvel (I-MR)"]:
-            coluna_valor = st.selectbox(
-                "Selecione a variável a ser controlada:",
-                colunas_numericas,
-                key=generate_unique_key("carta_valor", "tab5")
-            )
+    # ========== ABA 5: CARTA DE CONTROLE ==========
+    with tab5:
+        st.header("🎯 Cartas de Controle Estatístico")
         
-        elif tipo_carta == "P (Proporção de Defeituosos)":
-            coluna_defeitos = st.selectbox(
-                "Selecione a coluna de itens defeituosos:",
-                colunas_numericas,
-                key=generate_unique_key("carta_defeitos", "tab5")
-            )
-            coluna_tamanho_amostra = st.selectbox(
-                "Selecione a coluna de tamanho da amostra:",
-                colunas_numericas,
-                key=generate_unique_key("carta_tamanho", "tab5")
-            )
+        st.markdown("""
+        **Cartas de Controle** são ferramentas visuais para monitorar a estabilidade de processos.
+        Selecione o tipo de carta e configure os parâmetros:
+        """)
         
-        elif tipo_carta == "C (Número de Defeitos)":
-            coluna_defeitos = st.selectbox(
-                "Selecione a coluna de número de defeitos:",
-                colunas_numericas,
-                key=generate_unique_key("carta_num_defeitos", "tab5")
-            )
-    
-    with col_config2:
-        # Configurações comuns
-        if tipo_carta in ["X-bar e S (Variáveis Contínuas - Com Grupos)", "P (Proporção de Defeituosos)", "C (Número de Defeitos)"]:
-            coluna_grupo = st.selectbox(
-                "Selecione a coluna de grupo/amostra (opcional):",
-                [""] + colunas_todas,
-                key=generate_unique_key("carta_grupo", "tab5")
-            )
-            if not coluna_grupo:
-                tamanho_amostra = st.number_input(
-                    "Tamanho do subgrupo:",
-                    min_value=2,
-                    max_value=50,
-                    value=5,
-                    key=generate_unique_key("tamanho_amostra", "tab5")
+        # Seleção do tipo de carta
+        tipo_carta = st.selectbox(
+            "Selecione o tipo de Carta de Controle:",
+            [
+                "X-bar e S (Variáveis Contínuas - Com Grupos)",
+                "Individuais e Amplitude Móvel (I-MR)",
+                "P (Proporção de Defeituosos)",
+                "C (Número de Defeitos)"
+            ],
+            key=generate_unique_key("tipo_carta", "tab5")
+        )
+        
+        col_config1, col_config2 = st.columns(2)
+        
+        with col_config1:
+            if tipo_carta in ["X-bar e S (Variáveis Contínuas - Com Grupos)", "Individuais e Amplitude Móvel (I-MR)"]:
+                coluna_valor = st.selectbox(
+                    "Selecione a variável a ser controlada:",
+                    colunas_numericas,
+                    key=generate_unique_key("carta_valor", "tab5")
                 )
-        
-        elif tipo_carta == "Individuais e Amplitude Móvel (I-MR)":
-            coluna_tempo = st.selectbox(
-                "Selecione a coluna de tempo/ordem (opcional):",
-                [""] + colunas_todas,
-                key=generate_unique_key("carta_tempo", "tab5")
-            )
-    
-    # Botão para gerar carta
-    if st.button("📊 Gerar Carta de Controle", use_container_width=True,
-                key=generate_unique_key("gerar_carta", "tab5")):
-        
-        try:
-            if tipo_carta == "X-bar e S (Variáveis Contínuas - Com Grupos)":
-                if 'coluna_valor' in locals():
-                    xbar, s, n, limites_xbar, limites_s = criar_carta_controle_xbar_s(
-                        dados_processados, coluna_valor, 
-                        coluna_grupo if coluna_grupo else None,
-                        tamanho_amostra if not coluna_grupo else 5
-                    )
-                    
-                    if xbar is not None:
-                        # Carta X-bar - AGORA MAIOR
-                        fig_xbar, pontos_fora_xbar = plotar_carta_controle(
-                            xbar, limites_xbar, 
-                            f"Carta X-bar - {coluna_valor}", "xbar"
-                        )
-                        
-                        # Aumentar o tamanho do gráfico
-                        fig_xbar.update_layout(
-                            height=500,
-                            title_font_size=20,
-                            xaxis_title_font_size=16,
-                            yaxis_title_font_size=16
-                        )
-                        
-                        st.plotly_chart(fig_xbar, use_container_width=True)
-                        
-                        # Carta S - AGORA MAIOR
-                        fig_s, pontos_fora_s = plotar_carta_controle(
-                            s, limites_s,
-                            f"Carta S - {coluna_valor}", "s"
-                        )
-                        
-                        # Aumentar o tamanho do gráfico
-                        fig_s.update_layout(
-                            height=500,
-                            title_font_size=20,
-                            xaxis_title_font_size=16,
-                            yaxis_title_font_size=16
-                        )
-                        
-                        st.plotly_chart(fig_s, use_container_width=True)
-                        
-                        # Estatísticas
-                        st.subheader("📊 Estatísticas da Carta de Controle")
-                        col_stat1, col_stat2, col_stat3, col_stat4 = st.columns(4)
-                        with col_stat1:
-                            st.metric("LSC X-bar", f"{limites_xbar[0]:.4f}")
-                            st.metric("LC X-bar", f"{limites_xbar[1]:.4f}")
-                            st.metric("LIC X-bar", f"{limites_xbar[2]:.4f}")
-                        with col_stat2:
-                            st.metric("LSC S", f"{limites_s[0]:.4f}")
-                            st.metric("LC S", f"{limites_s[1]:.4f}")
-                            st.metric("LIC S", f"{limites_s[2]:.4f}")
-                        with col_stat3:
-                            st.metric("Pontos Fora (X-bar)", pontos_fora_xbar)
-                            st.metric("Pontos Fora (S)", pontos_fora_s)
-                        with col_stat4:
-                            capacidade = (limites_xbar[0] - limites_xbar[2]) / (6 * limites_s[1])
-                            st.metric("Capacidade do Processo", f"{capacidade:.3f}")
-            
-            elif tipo_carta == "Individuais e Amplitude Móvel (I-MR)":
-                if 'coluna_valor' in locals():
-                    individuais, mr, limites_i, limites_mr = criar_carta_controle_individual(
-                        dados_processados, coluna_valor,
-                        coluna_tempo if coluna_tempo else None
-                    )
-                    
-                    if individuais is not None:
-                        # Carta de Individuais - AGORA MAIOR
-                        fig_i, pontos_fora_i = plotar_carta_controle(
-                            individuais, limites_i,
-                            f"Carta de Individuais - {coluna_valor}", "individual"
-                        )
-                        
-                        # Aumentar o tamanho do gráfico
-                        fig_i.update_layout(
-                            height=500,
-                            title_font_size=20,
-                            xaxis_title_font_size=16,
-                            yaxis_title_font_size=16
-                        )
-                        
-                        st.plotly_chart(fig_i, use_container_width=True)
-                        
-                        # Carta de Amplitude Móvel - AGORA MAIOR
-                        fig_mr, pontos_fora_mr = plotar_carta_controle(
-                            mr, limites_mr,
-                            f"Carta de Amplitude Móvel - {coluna_valor}", "mr"
-                        )
-                        
-                        # Aumentar o tamanho do gráfico
-                        fig_mr.update_layout(
-                            height=500,
-                            title_font_size=20,
-                            xaxis_title_font_size=16,
-                            yaxis_title_font_size=16
-                        )
-                        
-                        st.plotly_chart(fig_mr, use_container_width=True)
-                        
-                        # Estatísticas
-                        st.subheader("📊 Estatísticas da Carta de Controle")
-                        col_stat1, col_stat2, col_stat3 = st.columns(3)
-                        with col_stat1:
-                            st.metric("LSC Individuais", f"{limites_i[0]:.4f}")
-                            st.metric("LC Individuais", f"{limites_i[1]:.4f}")
-                            st.metric("LIC Individuais", f"{limites_i[2]:.4f}")
-                        with col_stat2:
-                            st.metric("LSC MR", f"{limites_mr[0]:.4f}")
-                            st.metric("LC MR", f"{limites_mr[1]:.4f}")
-                            st.metric("LIC MR", f"{limites_mr[2]:.4f}")
-                        with col_stat3:
-                            st.metric("Pontos Fora (Individuais)", pontos_fora_i)
-                            st.metric("Pontos Fora (MR)", pontos_fora_mr)
             
             elif tipo_carta == "P (Proporção de Defeituosos)":
-                if 'coluna_defeitos' in locals() and 'coluna_tamanho_amostra' in locals():
-                    p, n, limites_p = criar_carta_controle_p(
-                        dados_processados, coluna_defeitos, coluna_tamanho_amostra,
-                        coluna_grupo if coluna_grupo else None
-                    )
-                    
-                    if p is not None:
-                        fig_p, pontos_fora_p = plotar_carta_controle(
-                            p, limites_p,
-                            f"Carta P - Proporção de Defeituosos", "p"
-                        )
-                        
-                        # Aumentar o tamanho do gráfico
-                        fig_p.update_layout(
-                            height=500,
-                            title_font_size=20,
-                            xaxis_title_font_size=16,
-                            yaxis_title_font_size=16
-                        )
-                        
-                        st.plotly_chart(fig_p, use_container_width=True)
-                        
-                        # Estatísticas
-                        st.subheader("📊 Estatísticas da Carta P")
-                        col_stat1, col_stat2, col_stat3 = st.columns(3)
-                        with col_stat1:
-                            st.metric("LSC P", f"{limites_p[0]:.4f}")
-                            st.metric("LC P", f"{limites_p[1]:.4f}")
-                            st.metric("LIC P", f"{limites_p[2]:.4f}")
-                        with col_stat2:
-                            st.metric("Proporção Média", f"{limites_p[1]:.4f}")
-                            st.metric("Tamanho Médio Amostra", f"{n.mean():.1f}")
-                        with col_stat3:
-                            st.metric("Pontos Fora", pontos_fora_p)
-                            st.metric("Total Grupos", len(p))
+                coluna_defeitos = st.selectbox(
+                    "Selecione a coluna de itens defeituosos:",
+                    colunas_numericas,
+                    key=generate_unique_key("carta_defeitos", "tab5")
+                )
+                coluna_tamanho_amostra = st.selectbox(
+                    "Selecione a coluna de tamanho da amostra:",
+                    colunas_numericas,
+                    key=generate_unique_key("carta_tamanho", "tab5")
+                )
             
             elif tipo_carta == "C (Número de Defeitos)":
-                if 'coluna_defeitos' in locals():
-                    c, limites_c = criar_carta_controle_c(
-                        dados_processados, coluna_defeitos,
-                        coluna_grupo if coluna_grupo else None
-                    )
-                    
-                    if c is not None:
-                        fig_c, pontos_fora_c = plotar_carta_controle(
-                            c, limites_c,
-                            f"Carta C - Número de Defeitos", "c"
-                        )
-                        
-                        # Aumentar o tamanho do gráfico
-                        fig_c.update_layout(
-                            height=500,
-                            title_font_size=20,
-                            xaxis_title_font_size=16,
-                            yaxis_title_font_size=16
-                        )
-                        
-                        st.plotly_chart(fig_c, use_container_width=True)
-                        
-                        # Estatísticas
-                        st.subheader("📊 Estatísticas da Carta C")
-                        col_stat1, col_stat2, col_stat3 = st.columns(3)
-                        with col_stat1:
-                            st.metric("LSC C", f"{limites_c[0]:.4f}")
-                            st.metric("LC C", f"{limites_c[1]:.4f}")
-                            st.metric("LIC C", f"{limites_c[2]:.4f}")
-                        with col_stat2:
-                            st.metric("Número Médio de Defeitos", f"{limites_c[1]:.2f}")
-                            st.metric("Desvio Padrão", f"{np.sqrt(limites_c[1]):.2f}")
-                        with col_stat3:
-                            st.metric("Pontos Fora", pontos_fora_c)
-                            st.metric("Total Grupos", len(c))
-            
-            # Análise de padrões
-            st.subheader("🔍 Análise de Padrões na Carta de Controle")
-            
-            col_pad1, col_pad2 = st.columns(2)
-            with col_pad1:
-                st.info("""
-                **📈 Interpretação Básica:**
-                - **Processo Estável**: Pontos dentro dos limites, sem padrões especiais
-                - **Fora de Controle**: Pontos além dos limites LSC/LIC
-                - **Tendências**: 7+ pontos consecutivos acima/abaixo da linha central
-                - **Oscilações**: Padrões sistemáticos de variação
-                """)
-            
-            with col_pad2:
-                st.warning("""
-                **🚨 Padrões Especiais a Observar:**
-                - 7 pontos consecutivos do mesmo lado da linha central
-                - 7 pontos consecutivos crescentes ou decrescentes
-                - Muitos pontos próximos aos limites de controle
-                - Poucos pontos próximos à linha central
-                """)
+                coluna_defeitos = st.selectbox(
+                    "Selecione a coluna de número de defeitos:",
+                    colunas_numericas,
+                    key=generate_unique_key("carta_num_defeitos", "tab5")
+                )
         
-        except Exception as e:
-            st.error(f"❌ Erro ao gerar carta de controle: {str(e)}")
-            st.info("💡 **Dica**: Verifique se as colunas selecionadas contêm dados válidos.")
+        with col_config2:
+            # Configurações comuns
+            if tipo_carta in ["X-bar e S (Variáveis Contínuas - Com Grupos)", "P (Proporção de Defeituosos)", "C (Número de Defeitos)"]:
+                coluna_grupo = st.selectbox(
+                    "Selecione a coluna de grupo/amostra (opcional):",
+                    [""] + colunas_todas,
+                    key=generate_unique_key("carta_grupo", "tab5")
+                )
+                if not coluna_grupo:
+                    tamanho_amostra = st.number_input(
+                        "Tamanho do subgrupo:",
+                        min_value=2,
+                        max_value=50,
+                        value=5,
+                        key=generate_unique_key("tamanho_amostra", "tab5")
+                    )
+            
+            elif tipo_carta == "Individuais e Amplitude Móvel (I-MR)":
+                coluna_tempo = st.selectbox(
+                    "Selecione a coluna de tempo/ordem (opcional):",
+                    [""] + colunas_todas,
+                    key=generate_unique_key("carta_tempo", "tab5")
+                )
+        
+        # Botão para gerar carta
+        if st.button("📊 Gerar Carta de Controle", use_container_width=True,
+                    key=generate_unique_key("gerar_carta", "tab5")):
+            
+            try:
+                if tipo_carta == "X-bar e S (Variáveis Contínuas - Com Grupos)":
+                    if 'coluna_valor' in locals():
+                        xbar, s, n, limites_xbar, limites_s = criar_carta_controle_xbar_s(
+                            dados_processados, coluna_valor, 
+                            coluna_grupo if coluna_grupo else None,
+                            tamanho_amostra if not coluna_grupo else 5
+                        )
+                        
+                        if xbar is not None:
+                            # Carta X-bar - TELA CHEIA
+                            st.subheader(f"📊 Carta X-bar - {coluna_valor}")
+                            fig_xbar, pontos_fora_xbar = plotar_carta_controle(
+                                xbar, limites_xbar, 
+                                f"Carta X-bar - {coluna_valor}", "xbar"
+                            )
+                            st.plotly_chart(fig_xbar, use_container_width=True)
+                            
+                            # Carta S - TELA CHEIA
+                            st.subheader(f"📊 Carta S - {coluna_valor}")
+                            fig_s, pontos_fora_s = plotar_carta_controle(
+                                s, limites_s,
+                                f"Carta S - {coluna_valor}", "s"
+                            )
+                            st.plotly_chart(fig_s, use_container_width=True)
+                            
+                            # Estatísticas
+                            st.subheader("📊 Estatísticas da Carta de Controle")
+                            col_stat1, col_stat2, col_stat3, col_stat4 = st.columns(4)
+                            with col_stat1:
+                                st.metric("LSC X-bar", f"{limites_xbar[0]:.4f}")
+                                st.metric("LC X-bar", f"{limites_xbar[1]:.4f}")
+                                st.metric("LIC X-bar", f"{limites_xbar[2]:.4f}")
+                            with col_stat2:
+                                st.metric("LSC S", f"{limites_s[0]:.4f}")
+                                st.metric("LC S", f"{limites_s[1]:.4f}")
+                                st.metric("LIC S", f"{limites_s[2]:.4f}")
+                            with col_stat3:
+                                st.metric("Pontos Fora (X-bar)", pontos_fora_xbar)
+                                st.metric("Pontos Fora (S)", pontos_fora_s)
+                            with col_stat4:
+                                capacidade = (limites_xbar[0] - limites_xbar[2]) / (6 * limites_s[1])
+                                st.metric("Capacidade do Processo", f"{capacidade:.3f}")
+                
+                elif tipo_carta == "Individuais e Amplitude Móvel (I-MR)":
+                    if 'coluna_valor' in locals():
+                        individuais, mr, limites_i, limites_mr = criar_carta_controle_individual(
+                            dados_processados, coluna_valor,
+                            coluna_tempo if coluna_tempo else None
+                        )
+                        
+                        if individuais is not None:
+                            # Carta de Individuais - TELA CHEIA
+                            st.subheader(f"📊 Carta de Individuais - {coluna_valor}")
+                            fig_i, pontos_fora_i = plotar_carta_controle(
+                                individuais, limites_i,
+                                f"Carta de Individuais - {coluna_valor}", "individual"
+                            )
+                            st.plotly_chart(fig_i, use_container_width=True)
+                            
+                            # Carta de Amplitude Móvel - TELA CHEIA
+                            st.subheader(f"📊 Carta de Amplitude Móvel - {coluna_valor}")
+                            fig_mr, pontos_fora_mr = plotar_carta_controle(
+                                mr, limites_mr,
+                                f"Carta de Amplitude Móvel - {coluna_valor}", "mr"
+                            )
+                            st.plotly_chart(fig_mr, use_container_width=True)
+                            
+                            # Estatísticas
+                            st.subheader("📊 Estatísticas da Carta de Controle")
+                            col_stat1, col_stat2, col_stat3 = st.columns(3)
+                            with col_stat1:
+                                st.metric("LSC Individuais", f"{limites_i[0]:.4f}")
+                                st.metric("LC Individuais", f"{limites_i[1]:.4f}")
+                                st.metric("LIC Individuais", f"{limites_i[2]:.4f}")
+                            with col_stat2:
+                                st.metric("LSC MR", f"{limites_mr[0]:.4f}")
+                                st.metric("LC MR", f"{limites_mr[1]:.4f}")
+                                st.metric("LIC MR", f"{limites_mr[2]:.4f}")
+                            with col_stat3:
+                                st.metric("Pontos Fora (Individuais)", pontos_fora_i)
+                                st.metric("Pontos Fora (MR)", pontos_fora_mr)
+                
+                elif tipo_carta == "P (Proporção de Defeituosos)":
+                    if 'coluna_defeitos' in locals() and 'coluna_tamanho_amostra' in locals():
+                        p, n, limites_p = criar_carta_controle_p(
+                            dados_processados, coluna_defeitos, coluna_tamanho_amostra,
+                            coluna_grupo if coluna_grupo else None
+                        )
+                        
+                        if p is not None:
+                            st.subheader(f"📊 Carta P - Proporção de Defeituosos")
+                            fig_p, pontos_fora_p = plotar_carta_controle(
+                                p, limites_p,
+                                f"Carta P - Proporção de Defeituosos", "p"
+                            )
+                            st.plotly_chart(fig_p, use_container_width=True)
+                            
+                            # Estatísticas
+                            st.subheader("📊 Estatísticas da Carta P")
+                            col_stat1, col_stat2, col_stat3 = st.columns(3)
+                            with col_stat1:
+                                st.metric("LSC P", f"{limites_p[0]:.4f}")
+                                st.metric("LC P", f"{limites_p[1]:.4f}")
+                                st.metric("LIC P", f"{limites_p[2]:.4f}")
+                            with col_stat2:
+                                st.metric("Proporção Média", f"{limites_p[1]:.4f}")
+                                st.metric("Tamanho Médio Amostra", f"{n.mean():.1f}")
+                            with col_stat3:
+                                st.metric("Pontos Fora", pontos_fora_p)
+                                st.metric("Total Grupos", len(p))
+                
+                elif tipo_carta == "C (Número de Defeitos)":
+                    if 'coluna_defeitos' in locals():
+                        c, limites_c = criar_carta_controle_c(
+                            dados_processados, coluna_defeitos,
+                            coluna_grupo if coluna_grupo else None
+                        )
+                        
+                        if c is not None:
+                            st.subheader(f"📊 Carta C - Número de Defeitos")
+                            fig_c, pontos_fora_c = plotar_carta_controle(
+                                c, limites_c,
+                                f"Carta C - Número de Defeitos", "c"
+                            )
+                            st.plotly_chart(fig_c, use_container_width=True)
+                            
+                            # Estatísticas
+                            st.subheader("📊 Estatísticas da Carta C")
+                            col_stat1, col_stat2, col_stat3 = st.columns(3)
+                            with col_stat1:
+                                st.metric("LSC C", f"{limites_c[0]:.4f}")
+                                st.metric("LC C", f"{limites_c[1]:.4f}")
+                                st.metric("LIC C", f"{limites_c[2]:.4f}")
+                            with col_stat2:
+                                st.metric("Número Médio de Defeitos", f"{limites_c[1]:.2f}")
+                                st.metric("Desvio Padrão", f"{np.sqrt(limites_c[1]):.2f}")
+                            with col_stat3:
+                                st.metric("Pontos Fora", pontos_fora_c)
+                                st.metric("Total Grupos", len(c))
+                
+                # Análise de padrões
+                st.subheader("🔍 Análise de Padrões na Carta de Controle")
+                
+                col_pad1, col_pad2 = st.columns(2)
+                with col_pad1:
+                    st.info("""
+                    **📈 Interpretação Básica:**
+                    - **Processo Estável**: Pontos dentro dos limites, sem padrões especiais
+                    - **Fora de Controle**: Pontos além dos limites LSC/LIC
+                    - **Tendências**: 7+ pontos consecutivos acima/abaixo da linha central
+                    - **Oscilações**: Padrões sistemáticos de variação
+                    """)
+                
+                with col_pad2:
+                    st.warning("""
+                    **🚨 Padrões Especiais a Observar:**
+                    - 7 pontos consecutivos do mesmo lado da linha central
+                    - 7 pontos consecutivos crescentes ou decrescentes
+                    - Muitos pontos próximos aos limites de controle
+                    - Poucos pontos próximos à linha central
+                    """)
+            
+            except Exception as e:
+                st.error(f"❌ Erro ao gerar carta de controle: {str(e)}")
+                st.info("💡 **Dica**: Verifique se as colunas selecionadas contêm dados válidos.")
 
     # ========== ABA 6: CONTROLE ESTATÍSTICO ==========
     with tab6:

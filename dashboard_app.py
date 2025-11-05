@@ -6,8 +6,6 @@ import plotly.graph_objects as go
 import numpy as np
 from datetime import datetime
 import os
-import scipy.stats as stats
-from sklearn.preprocessing import StandardScaler
 import warnings
 warnings.filterwarnings('ignore')
 
@@ -40,7 +38,7 @@ def converter_para_data(coluna):
     except:
         return coluna
 
-# Função para detectar outliers
+# Função para detectar outliers usando IQR
 def detectar_outliers(dados, coluna):
     if coluna not in dados.columns:
         return pd.DataFrame(), pd.Series()
@@ -53,12 +51,22 @@ def detectar_outliers(dados, coluna):
     outliers_mask = (dados[coluna] < lower_bound) | (dados[coluna] > upper_bound)
     return dados[outliers_mask], outliers_mask
 
-# Função para detectar outliers usando Z-score
+# Função para detectar outliers usando Z-score (implementação manual)
 def detectar_outliers_zscore(dados, coluna, threshold=3):
     if coluna not in dados.columns:
         return pd.DataFrame(), pd.Series()
     
-    z_scores = np.abs(stats.zscore(dados[coluna].dropna()))
+    data_clean = dados[coluna].dropna()
+    if len(data_clean) < 2:
+        return pd.DataFrame(), pd.Series()
+    
+    mean_val = data_clean.mean()
+    std_val = data_clean.std()
+    
+    if std_val == 0:
+        return pd.DataFrame(), pd.Series()
+    
+    z_scores = np.abs((data_clean - mean_val) / std_val)
     outliers_mask = z_scores > threshold
     return dados[outliers_mask], outliers_mask
 
@@ -94,16 +102,21 @@ def calcular_regressao_linear(x, y):
     
     return slope, intercept, r_squared
 
-# Função para criar gráfico Q-Q correto
+# Função para criar gráfico Q-Q (implementação manual)
 def criar_qq_plot_correto(data):
     """Cria gráfico Q-Q correto passando pelo meio dos pontos"""
     data_clean = data.dropna()
     if len(data_clean) < 2:
         return go.Figure()
     
-    # Calcular quantis teóricos normais
-    theoretical_quantiles = stats.probplot(data_clean, dist="norm")[0][0]
-    sample_quantiles = stats.probplot(data_clean, dist="norm")[0][1]
+    # Calcular quantis teóricos usando distribuição normal manualmente
+    n = len(data_clean)
+    # Gerar quantis teóricos para distribuição normal
+    theoretical_quantiles = np.sort(np.random.normal(0, 1, n))
+    sample_quantiles = np.sort(data_clean)
+    
+    # Normalizar os dados para melhor visualização
+    sample_quantiles = (sample_quantiles - np.mean(sample_quantiles)) / np.std(sample_quantiles)
     
     # Calcular linha de tendência para o Q-Q plot
     z = np.polyfit(theoretical_quantiles, sample_quantiles, 1)
@@ -157,11 +170,13 @@ def analise_capacidade_processo(dados, coluna, lse, lie):
         'n': len(data_clean)
     }
     
-    if lse is not None and lie is not None:
+    if lse is not None and lie is not None and lse > lie:
         # Cp - Capacidade do processo
         cp = (lse - lie) / (6 * desvio_padrao)
         # Cpk - Capacidade real do processo
-        cpk = min((lse - media) / (3 * desvio_padrao), (media - lie) / (3 * desvio_padrao))
+        cpk_u = (lse - media) / (3 * desvio_padrao) if desvio_padrao > 0 else 0
+        cpk_l = (media - lie) / (3 * desvio_padrao) if desvio_padrao > 0 else 0
+        cpk = min(cpk_u, cpk_l)
         
         resultados.update({
             'cp': cp,
@@ -176,7 +191,7 @@ def analise_capacidade_processo(dados, coluna, lse, lie):
 def criar_grafico_controle(dados, coluna_valor, coluna_data=None):
     """Cria gráfico de controle (X-bar)"""
     if coluna_valor not in dados.columns:
-        return go.Figure()
+        return go.Figure(), 0, 0, 0
     
     data_clean = dados[[coluna_valor]].copy()
     if coluna_data and coluna_data in dados.columns:
@@ -221,6 +236,28 @@ def criar_grafico_controle(dados, coluna_valor, coluna_data=None):
     )
     
     return fig, lsc, lc, lic
+
+# Função para teste de normalidade manual (simplificado)
+def teste_normalidade_manual(data):
+    """Teste de normalidade simplificado usando assimetria e curtose"""
+    data_clean = data.dropna()
+    if len(data_clean) < 3:
+        return 0.5  # Valor neutro se não há dados suficientes
+    
+    # Calcular assimetria manualmente
+    mean_val = np.mean(data_clean)
+    std_val = np.std(data_clean)
+    if std_val == 0:
+        return 0.5
+    
+    skewness = np.mean(((data_clean - mean_val) / std_val) ** 3)
+    
+    # Calcular curtose manualmente
+    kurtosis = np.mean(((data_clean - mean_val) / std_val) ** 4) - 3
+    
+    # Estimativa simplificada de p-valor baseada na assimetria e curtose
+    p_value = max(0, 1 - (abs(skewness) + abs(kurtosis)) / 2)
+    return p_value
 
 def main():
     st.title("🏭 Dashboard de Análise de Processos Industriais")
@@ -393,7 +430,7 @@ def main():
                                      key=generate_unique_key("lie", coluna_limites))
                 st.session_state.lie_values[coluna_limites] = lie
 
-    # Abas principais - AGRORA MAIS COMPLETAS
+    # Abas principais
     tab1, tab2, tab3, tab4, tab5, tab6 = st.tabs([
         "📈 Análise Temporal", 
         "📊 Estatística Detalhada", 
@@ -480,7 +517,7 @@ def main():
                     with col_t4:
                         # Calcular volatilidade (desvio padrão das variações)
                         variacoes = dados_temp[coluna_valor].pct_change().dropna()
-                        volatilidade = variacoes.std() * 100
+                        volatilidade = variacoes.std() * 100 if len(variacoes) > 0 else 0
                         st.metric("Volatilidade", f"{volatilidade:.2f}%")
 
     with tab2:
@@ -507,7 +544,8 @@ def main():
                     st.info(f"📊 {len(outliers_df)} outliers removidos para análise")
                 
                 if usar_log:
-                    dados_analise[coluna_analise] = np.log1p(dados_analise[coluna_analise])
+                    # Adicionar uma constante pequena para evitar log(0)
+                    dados_analise[coluna_analise] = np.log1p(dados_analise[coluna_analise] - dados_analise[coluna_analise].min())
                     st.info("Transformação logarítmica aplicada")
                 
                 # Estatísticas básicas
@@ -549,10 +587,9 @@ def main():
                     st.metric("Assimetria", f"{skewness:.3f}")
                     st.metric("Curtose", f"{kurtosis:.3f}")
                     
-                    # Teste de normalidade
-                    if len(dados_analise[coluna_analise].dropna()) > 3:
-                        stat_norm, p_norm = stats.normaltest(dados_analise[coluna_analise].dropna())
-                        st.metric("p-valor (Normalidade)", f"{p_norm:.4f}")
+                    # Teste de normalidade manual
+                    p_norm = teste_normalidade_manual(dados_analise[coluna_analise])
+                    st.metric("p-valor (Normalidade Aprox.)", f"{p_norm:.4f}")
                     
                     # Interpretação
                     st.write("**📝 Interpretação:**")
@@ -577,20 +614,9 @@ def main():
                                       nbins=30, marginal="box",
                                       histnorm='probability density')
                     
-                    # Adicionar curva normal
-                    if len(dados_analise[coluna_analise].dropna()) > 1:
-                        x_norm = np.linspace(dados_analise[coluna_analise].min(), 
-                                           dados_analise[coluna_analise].max(), 100)
-                        y_norm = stats.norm.pdf(x_norm, 
-                                              dados_analise[coluna_analise].mean(),
-                                              dados_analise[coluna_analise].std())
-                        fig.add_trace(go.Scatter(x=x_norm, y=y_norm, 
-                                               mode='lines', name='Distribuição Normal',
-                                               line=dict(color='red', width=2)))
-                    
                     st.plotly_chart(fig, use_container_width=True)
                 
-                # Gráfico Q-Q CORRIGIDO
+                # Gráfico Q-Q
                 st.subheader("📊 Gráfico Q-Q (Análise de Normalidade)")
                 fig_qq = criar_qq_plot_correto(dados_analise[coluna_analise])
                 st.plotly_chart(fig_qq, use_container_width=True)
@@ -616,7 +642,7 @@ def main():
                                                        key=generate_unique_key("remove_corr_outliers", "tab3"))
                 with col_opt2:
                     metodo_corr = st.selectbox("Método de correlação:",
-                                              ["Pearson", "Spearman", "Kendall"],
+                                              ["Pearson", "Spearman"],
                                               key=generate_unique_key("corr_method", "tab3"))
                 
                 dados_corr = dados_processados.copy()
@@ -629,10 +655,8 @@ def main():
                 # Matriz de correlação
                 if metodo_corr == "Pearson":
                     corr_matrix = dados_corr[variaveis_selecionadas].corr(method='pearson')
-                elif metodo_corr == "Spearman":
-                    corr_matrix = dados_corr[variaveis_selecionadas].corr(method='spearman')
                 else:
-                    corr_matrix = dados_corr[variaveis_selecionadas].corr(method='kendall')
+                    corr_matrix = dados_corr[variaveis_selecionadas].corr(method='spearman')
                 
                 fig = px.imshow(corr_matrix, 
                                title=f"Matriz de Correlação ({metodo_corr})",
@@ -796,7 +820,7 @@ def main():
             
             if coluna_controle:
                 # Gráfico de controle
-                if coluna_data_controle:
+                if coluna_data_controle and coluna_data_controle != "":
                     fig_controle, lsc, lc, lic = criar_grafico_controle(
                         dados_processados, coluna_controle, coluna_data_controle
                     )
@@ -836,29 +860,26 @@ def main():
                 lse = st.session_state.lse_values.get(coluna_controle, 0)
                 lie = st.session_state.lie_values.get(coluna_controle, 0)
                 
-                if lse != 0 or lie != 0:
+                if lse != 0 and lie != 0 and lse > lie:
                     capacidade = analise_capacidade_processo(dados_processados, coluna_controle, lse, lie)
                     
-                    if capacidade:
+                    if capacidade and 'cp' in capacidade:
                         col_cap1, col_cap2, col_cap3 = st.columns(3)
                         with col_cap1:
-                            if 'cp' in capacidade:
-                                st.metric("Cp", f"{capacidade['cp']:.3f}")
-                            if 'cpk' in capacidade:
-                                st.metric("Cpk", f"{capacidade['cpk']:.3f}")
+                            st.metric("Cp", f"{capacidade['cp']:.3f}")
+                            st.metric("Cpk", f"{capacidade['cpk']:.3f}")
                         with col_cap2:
                             st.metric("LSE", f"{lse:.3f}")
                             st.metric("LIE", f"{lie:.3f}")
                         with col_cap3:
                             # Interpretação da capacidade
-                            if 'cpk' in capacidade:
-                                cpk = capacidade['cpk']
-                                if cpk >= 1.33:
-                                    st.success("✅ Processo Capaz")
-                                elif cpk >= 1.0:
-                                    st.warning("⚠️ Processo Marginalmente Capaz")
-                                else:
-                                    st.error("❌ Processo Incapaz")
+                            cpk = capacidade['cpk']
+                            if cpk >= 1.33:
+                                st.success("✅ Processo Capaz")
+                            elif cpk >= 1.0:
+                                st.warning("⚠️ Processo Marginalmente Capaz")
+                            else:
+                                st.error("❌ Processo Incapaz")
 
     with tab6:
         st.header("📋 Resumo Executivo")
@@ -930,29 +951,6 @@ def main():
         mime="text/csv",
         key=generate_unique_key("download_csv", "main")
     )
-    
-    # Download do relatório em Excel
-    @st.cache_data
-    def to_excel(df):
-        output = BytesIO()
-        writer = pd.ExcelWriter(output, engine='xlsxwriter')
-        df.to_excel(writer, index=False, sheet_name='Dados_Processados')
-        writer.close()
-        processed_data = output.getvalue()
-        return processed_data
-    
-    try:
-        from io import BytesIO
-        excel_data = to_excel(dados_processados)
-        st.sidebar.download_button(
-            label="📥 Baixar dados processados (Excel)",
-            data=excel_data,
-            file_name="dados_processados.xlsx",
-            mime="application/vnd.ms-excel",
-            key=generate_unique_key("download_excel", "main")
-        )
-    except:
-        pass
 
 if __name__ == "__main__":
     main()

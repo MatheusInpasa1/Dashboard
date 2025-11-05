@@ -116,7 +116,10 @@ def criar_qq_plot_correto(data):
     sample_quantiles = np.sort(data_clean)
     
     # Normalizar os dados para melhor visualização
-    sample_quantiles = (sample_quantiles - np.mean(sample_quantiles)) / np.std(sample_quantiles)
+    sample_mean = np.mean(sample_quantiles)
+    sample_std = np.std(sample_quantiles)
+    if sample_std > 0:
+        sample_quantiles = (sample_quantiles - sample_mean) / sample_std
     
     # Calcular linha de tendência para o Q-Q plot
     z = np.polyfit(theoretical_quantiles, sample_quantiles, 1)
@@ -170,12 +173,12 @@ def analise_capacidade_processo(dados, coluna, lse, lie):
         'n': len(data_clean)
     }
     
-    if lse is not None and lie is not None and lse > lie:
+    if lse is not None and lie is not None and lse > lie and desvio_padrao > 0:
         # Cp - Capacidade do processo
         cp = (lse - lie) / (6 * desvio_padrao)
         # Cpk - Capacidade real do processo
-        cpk_u = (lse - media) / (3 * desvio_padrao) if desvio_padrao > 0 else 0
-        cpk_l = (media - lie) / (3 * desvio_padrao) if desvio_padrao > 0 else 0
+        cpk_u = (lse - media) / (3 * desvio_padrao)
+        cpk_l = (media - lie) / (3 * desvio_padrao)
         cpk = min(cpk_u, cpk_l)
         
         resultados.update({
@@ -209,7 +212,7 @@ def criar_grafico_controle(dados, coluna_valor, coluna_data=None):
     fig = go.Figure()
     
     # Adicionar pontos do processo
-    if coluna_data:
+    if coluna_data and coluna_data in data_clean.columns:
         x_data = data_clean[coluna_data]
     else:
         x_data = list(range(len(data_clean)))
@@ -363,7 +366,7 @@ def main():
                         (dados_processados[coluna_data_filtro] <= pd.Timestamp(end_date))
                     ]
         
-        # Filtro de outliers - CORRIGIDO
+        # Filtro de outliers
         st.subheader("🔍 Gerenciamento de Outliers")
         
         if colunas_numericas:
@@ -545,7 +548,11 @@ def main():
                 
                 if usar_log:
                     # Adicionar uma constante pequena para evitar log(0)
-                    dados_analise[coluna_analise] = np.log1p(dados_analise[coluna_analise] - dados_analise[coluna_analise].min())
+                    min_val = dados_analise[coluna_analise].min()
+                    if min_val <= 0:
+                        dados_analise[coluna_analise] = np.log1p(dados_analise[coluna_analise] - min_val + 0.001)
+                    else:
+                        dados_analise[coluna_analise] = np.log(dados_analise[coluna_analise])
                     st.info("Transformação logarítmica aplicada")
                 
                 # Estatísticas básicas
@@ -653,57 +660,61 @@ def main():
                     st.info("Outliers removidos de todas as variáveis selecionadas")
                 
                 # Matriz de correlação
-                if metodo_corr == "Pearson":
-                    corr_matrix = dados_corr[variaveis_selecionadas].corr(method='pearson')
-                else:
-                    corr_matrix = dados_corr[variaveis_selecionadas].corr(method='spearman')
+                try:
+                    if metodo_corr == "Pearson":
+                        corr_matrix = dados_corr[variaveis_selecionadas].corr(method='pearson')
+                    else:
+                        corr_matrix = dados_corr[variaveis_selecionadas].corr(method='spearman')
+                    
+                    fig = px.imshow(corr_matrix, 
+                                   title=f"Matriz de Correlação ({metodo_corr})",
+                                   color_continuous_scale="RdBu_r",
+                                   aspect="auto",
+                                   text_auto=True)
+                    st.plotly_chart(fig, use_container_width=True)
+                    
+                    # Análise detalhada de correlações
+                    st.subheader("🔍 Análise Detalhada das Correlações")
+                    
+                    correlations = []
+                    for i in range(len(corr_matrix.columns)):
+                        for j in range(i+1, len(corr_matrix.columns)):
+                            corr_value = corr_matrix.iloc[i, j]
+                            correlations.append({
+                                'Variável 1': corr_matrix.columns[i],
+                                'Variável 2': corr_matrix.columns[j],
+                                'Correlação': corr_value,
+                                '|Correlação|': abs(corr_value)
+                            })
+                    
+                    df_corr = pd.DataFrame(correlations)
+                    
+                    col_ana1, col_ana2 = st.columns(2)
+                    
+                    with col_ana1:
+                        st.write("**📈 Top 10 Maiores Correlações:**")
+                        top_correlations = df_corr.nlargest(10, '|Correlação|')
+                        for _, row in top_correlations.iterrows():
+                            corr_value = row['Correlação']
+                            corr_color = "🟢" if corr_value > 0 else "🔴"
+                            corr_strength = "Forte" if abs(corr_value) > 0.7 else "Moderada" if abs(corr_value) > 0.3 else "Fraca"
+                            st.write(f"{corr_color} **{corr_value:.3f}** - {corr_strength}")
+                            st.write(f"   {row['Variável 1']} ↔ {row['Variável 2']}")
+                            st.write("---")
+                    
+                    with col_ana2:
+                        st.write("**📉 Top 10 Menores Correlações:**")
+                        bottom_correlations = df_corr.nsmallest(10, '|Correlação|')
+                        for _, row in bottom_correlations.iterrows():
+                            corr_value = row['Correlação']
+                            corr_color = "🟢" if corr_value > 0 else "🔴"
+                            corr_strength = "Fraca"
+                            st.write(f"{corr_color} **{corr_value:.3f}** - {corr_strength}")
+                            st.write(f"   {row['Variável 1']} ↔ {row['Variável 2']}")
+                            st.write("---")
                 
-                fig = px.imshow(corr_matrix, 
-                               title=f"Matriz de Correlação ({metodo_corr})",
-                               color_continuous_scale="RdBu_r",
-                               aspect="auto",
-                               text_auto=True)
-                st.plotly_chart(fig, use_container_width=True)
-                
-                # Análise detalhada de correlações
-                st.subheader("🔍 Análise Detalhada das Correlações")
-                
-                correlations = []
-                for i in range(len(corr_matrix.columns)):
-                    for j in range(i+1, len(corr_matrix.columns)):
-                        corr_value = corr_matrix.iloc[i, j]
-                        correlations.append({
-                            'Variável 1': corr_matrix.columns[i],
-                            'Variável 2': corr_matrix.columns[j],
-                            'Correlação': corr_value,
-                            '|Correlação|': abs(corr_value)
-                        })
-                
-                df_corr = pd.DataFrame(correlations)
-                
-                col_ana1, col_ana2 = st.columns(2)
-                
-                with col_ana1:
-                    st.write("**📈 Top 10 Maiores Correlações:**")
-                    top_correlations = df_corr.nlargest(10, '|Correlação|')
-                    for _, row in top_correlations.iterrows():
-                        corr_value = row['Correlação']
-                        corr_color = "🟢" if corr_value > 0 else "🔴"
-                        corr_strength = "Forte" if abs(corr_value) > 0.7 else "Moderada" if abs(corr_value) > 0.3 else "Fraca"
-                        st.write(f"{corr_color} **{corr_value:.3f}** - {corr_strength}")
-                        st.write(f"   {row['Variável 1']} ↔ {row['Variável 2']}")
-                        st.write("---")
-                
-                with col_ana2:
-                    st.write("**📉 Top 10 Menores Correlações:**")
-                    bottom_correlations = df_corr.nsmallest(10, '|Correlação|')
-                    for _, row in bottom_correlations.iterrows():
-                        corr_value = row['Correlação']
-                        corr_color = "🟢" if corr_value > 0 else "🔴"
-                        corr_strength = "Fraca"
-                        st.write(f"{corr_color} **{corr_value:.3f}** - {corr_strength}")
-                        st.write(f"   {row['Variável 1']} ↔ {row['Variável 2']}")
-                        st.write("---")
+                except Exception as e:
+                    st.error(f"Erro ao calcular correlações: {str(e)}")
 
     with tab4:
         st.header("🔍 Gráficos de Dispersão com Regressão")
@@ -739,71 +750,75 @@ def main():
                     st.info(f"📊 {outliers_mask.sum()} outliers removidos para visualização")
                 
                 # Gráfico de dispersão
-                if color_by and color_by in dados_scatter.columns:
-                    fig = px.scatter(dados_scatter, x=eixo_x, y=eixo_y, color=color_by,
-                                    title=f"{eixo_y} vs {eixo_x} (Colorido por {color_by})")
-                else:
-                    fig = px.scatter(dados_scatter, x=eixo_x, y=eixo_y, 
-                                    title=f"{eixo_y} vs {eixo_x}")
-                
-                # Calcular regressão linear manualmente
-                if mostrar_regressao:
-                    slope, intercept, r_squared = calcular_regressao_linear(
-                        dados_scatter[eixo_x].values,
-                        dados_scatter[eixo_y].values
-                    )
+                try:
+                    if color_by and color_by in dados_scatter.columns:
+                        fig = px.scatter(dados_scatter, x=eixo_x, y=eixo_y, color=color_by,
+                                        title=f"{eixo_y} vs {eixo_x} (Colorido por {color_by})")
+                    else:
+                        fig = px.scatter(dados_scatter, x=eixo_x, y=eixo_y, 
+                                        title=f"{eixo_y} vs {eixo_x}")
                     
-                    # Adicionar linha de regressão manualmente se possível
-                    if slope is not None and intercept is not None:
-                        x_range = np.linspace(dados_scatter[eixo_x].min(), dados_scatter[eixo_x].max(), 100)
-                        y_pred = slope * x_range + intercept
-                        
-                        fig.add_trace(go.Scatter(
-                            x=x_range,
-                            y=y_pred,
-                            mode='lines',
-                            name='Linha de Regressão',
-                            line=dict(color='red', width=3)
-                        ))
-                        
-                        # Adicionar equação da reta
-                        equation = f"y = {slope:.4f}x + {intercept:.4f}"
-                        r2_text = f"R² = {r_squared:.4f}"
-                        
-                        fig.add_annotation(
-                            x=0.05,
-                            y=0.95,
-                            xref="paper",
-                            yref="paper",
-                            text=f"<b>{equation}<br>{r2_text}</b>",
-                            showarrow=False,
-                            font=dict(size=14, color="black"),
-                            bgcolor="white",
-                            bordercolor="black",
-                            borderwidth=2,
-                            borderpad=4,
-                            opacity=0.8
+                    # Calcular regressão linear manualmente
+                    if mostrar_regressao:
+                        slope, intercept, r_squared = calcular_regressao_linear(
+                            dados_scatter[eixo_x].values,
+                            dados_scatter[eixo_y].values
                         )
+                        
+                        # Adicionar linha de regressão manualmente se possível
+                        if slope is not None and intercept is not None:
+                            x_range = np.linspace(dados_scatter[eixo_x].min(), dados_scatter[eixo_x].max(), 100)
+                            y_pred = slope * x_range + intercept
+                            
+                            fig.add_trace(go.Scatter(
+                                x=x_range,
+                                y=y_pred,
+                                mode='lines',
+                                name='Linha de Regressão',
+                                line=dict(color='red', width=3)
+                            ))
+                            
+                            # Adicionar equação da reta
+                            equation = f"y = {slope:.4f}x + {intercept:.4f}"
+                            r2_text = f"R² = {r_squared:.4f}"
+                            
+                            fig.add_annotation(
+                                x=0.05,
+                                y=0.95,
+                                xref="paper",
+                                yref="paper",
+                                text=f"<b>{equation}<br>{r2_text}</b>",
+                                showarrow=False,
+                                font=dict(size=14, color="black"),
+                                bgcolor="white",
+                                bordercolor="black",
+                                borderwidth=2,
+                                borderpad=4,
+                                opacity=0.8
+                            )
+                    
+                    st.plotly_chart(fig, use_container_width=True)
+                    
+                    # Estatísticas de correlação COMPLETAS
+                    st.subheader("📊 Estatísticas de Correlação e Regressão")
+                    
+                    correlacao_pearson = dados_scatter[eixo_x].corr(dados_scatter[eixo_y])
+                    correlacao_spearman = dados_scatter[eixo_x].corr(dados_scatter[eixo_y], method='spearman')
+                    
+                    col_stat1, col_stat2, col_stat3, col_stat4 = st.columns(4)
+                    with col_stat1:
+                        st.metric("Correlação (Pearson)", f"{correlacao_pearson:.4f}")
+                    with col_stat2:
+                        st.metric("Correlação (Spearman)", f"{correlacao_spearman:.4f}")
+                    with col_stat3:
+                        if r_squared is not None:
+                            st.metric("Coeficiente R²", f"{r_squared:.4f}")
+                    with col_stat4:
+                        if slope is not None:
+                            st.metric("Inclinação", f"{slope:.4f}")
                 
-                st.plotly_chart(fig, use_container_width=True)
-                
-                # Estatísticas de correlação COMPLETAS
-                st.subheader("📊 Estatísticas de Correlação e Regressão")
-                
-                correlacao_pearson = dados_scatter[eixo_x].corr(dados_scatter[eixo_y])
-                correlacao_spearman = dados_scatter[eixo_x].corr(dados_scatter[eixo_y], method='spearman')
-                
-                col_stat1, col_stat2, col_stat3, col_stat4 = st.columns(4)
-                with col_stat1:
-                    st.metric("Correlação (Pearson)", f"{correlacao_pearson:.4f}")
-                with col_stat2:
-                    st.metric("Correlação (Spearman)", f"{correlacao_spearman:.4f}")
-                with col_stat3:
-                    if r_squared is not None:
-                        st.metric("Coeficiente R²", f"{r_squared:.4f}")
-                with col_stat4:
-                    if slope is not None:
-                        st.metric("Inclinação", f"{slope:.4f}")
+                except Exception as e:
+                    st.error(f"Erro ao criar gráfico de dispersão: {str(e)}")
 
     with tab5:
         st.header("🎯 Controle Estatístico do Processo")
@@ -820,66 +835,70 @@ def main():
             
             if coluna_controle:
                 # Gráfico de controle
-                if coluna_data_controle and coluna_data_controle != "":
-                    fig_controle, lsc, lc, lic = criar_grafico_controle(
-                        dados_processados, coluna_controle, coluna_data_controle
-                    )
-                else:
-                    fig_controle, lsc, lc, lic = criar_grafico_controle(
-                        dados_processados, coluna_controle
-                    )
-                
-                st.plotly_chart(fig_controle, use_container_width=True)
-                
-                # Estatísticas de controle
-                st.subheader("📊 Estatísticas de Controle")
-                
-                dados_controle = dados_processados[coluna_controle].dropna()
-                media = dados_controle.mean()
-                std = dados_controle.std()
-                
-                col_ctrl1, col_ctrl2, col_ctrl3, col_ctrl4 = st.columns(4)
-                with col_ctrl1:
-                    st.metric("Linha Central (LC)", f"{lc:.4f}")
-                    st.metric("Média", f"{media:.4f}")
-                with col_ctrl2:
-                    st.metric("LSC", f"{lsc:.4f}")
-                    st.metric("+3σ", f"{media + 3*std:.4f}")
-                with col_ctrl3:
-                    st.metric("LIC", f"{lic:.4f}")
-                    st.metric("-3σ", f"{media - 3*std:.4f}")
-                with col_ctrl4:
-                    # Pontos fora dos limites
-                    pontos_fora = ((dados_controle > lsc) | (dados_controle < lic)).sum()
-                    percentual_fora = (pontos_fora / len(dados_controle)) * 100
-                    st.metric("Pontos Fora", f"{pontos_fora} ({percentual_fora:.1f}%)")
-                
-                # Análise de capacidade do processo
-                st.subheader("📈 Análise de Capacidade do Processo")
-                
-                lse = st.session_state.lse_values.get(coluna_controle, 0)
-                lie = st.session_state.lie_values.get(coluna_controle, 0)
-                
-                if lse != 0 and lie != 0 and lse > lie:
-                    capacidade = analise_capacidade_processo(dados_processados, coluna_controle, lse, lie)
+                try:
+                    if coluna_data_controle and coluna_data_controle != "":
+                        fig_controle, lsc, lc, lic = criar_grafico_controle(
+                            dados_processados, coluna_controle, coluna_data_controle
+                        )
+                    else:
+                        fig_controle, lsc, lc, lic = criar_grafico_controle(
+                            dados_processados, coluna_controle
+                        )
                     
-                    if capacidade and 'cp' in capacidade:
-                        col_cap1, col_cap2, col_cap3 = st.columns(3)
-                        with col_cap1:
-                            st.metric("Cp", f"{capacidade['cp']:.3f}")
-                            st.metric("Cpk", f"{capacidade['cpk']:.3f}")
-                        with col_cap2:
-                            st.metric("LSE", f"{lse:.3f}")
-                            st.metric("LIE", f"{lie:.3f}")
-                        with col_cap3:
-                            # Interpretação da capacidade
-                            cpk = capacidade['cpk']
-                            if cpk >= 1.33:
-                                st.success("✅ Processo Capaz")
-                            elif cpk >= 1.0:
-                                st.warning("⚠️ Processo Marginalmente Capaz")
-                            else:
-                                st.error("❌ Processo Incapaz")
+                    st.plotly_chart(fig_controle, use_container_width=True)
+                    
+                    # Estatísticas de controle
+                    st.subheader("📊 Estatísticas de Controle")
+                    
+                    dados_controle = dados_processados[coluna_controle].dropna()
+                    media = dados_controle.mean()
+                    std = dados_controle.std()
+                    
+                    col_ctrl1, col_ctrl2, col_ctrl3, col_ctrl4 = st.columns(4)
+                    with col_ctrl1:
+                        st.metric("Linha Central (LC)", f"{lc:.4f}")
+                        st.metric("Média", f"{media:.4f}")
+                    with col_ctrl2:
+                        st.metric("LSC", f"{lsc:.4f}")
+                        st.metric("+3σ", f"{media + 3*std:.4f}")
+                    with col_ctrl3:
+                        st.metric("LIC", f"{lic:.4f}")
+                        st.metric("-3σ", f"{media - 3*std:.4f}")
+                    with col_ctrl4:
+                        # Pontos fora dos limites
+                        pontos_fora = ((dados_controle > lsc) | (dados_controle < lic)).sum()
+                        percentual_fora = (pontos_fora / len(dados_controle)) * 100 if len(dados_controle) > 0 else 0
+                        st.metric("Pontos Fora", f"{pontos_fora} ({percentual_fora:.1f}%)")
+                    
+                    # Análise de capacidade do processo
+                    st.subheader("📈 Análise de Capacidade do Processo")
+                    
+                    lse = st.session_state.lse_values.get(coluna_controle, 0)
+                    lie = st.session_state.lie_values.get(coluna_controle, 0)
+                    
+                    if lse != 0 and lie != 0 and lse > lie:
+                        capacidade = analise_capacidade_processo(dados_processados, coluna_controle, lse, lie)
+                        
+                        if capacidade and 'cp' in capacidade:
+                            col_cap1, col_cap2, col_cap3 = st.columns(3)
+                            with col_cap1:
+                                st.metric("Cp", f"{capacidade['cp']:.3f}")
+                                st.metric("Cpk", f"{capacidade['cpk']:.3f}")
+                            with col_cap2:
+                                st.metric("LSE", f"{lse:.3f}")
+                                st.metric("LIE", f"{lie:.3f}")
+                            with col_cap3:
+                                # Interpretação da capacidade
+                                cpk = capacidade['cpk']
+                                if cpk >= 1.33:
+                                    st.success("✅ Processo Capaz")
+                                elif cpk >= 1.0:
+                                    st.warning("⚠️ Processo Marginalmente Capaz")
+                                else:
+                                    st.error("❌ Processo Incapaz")
+                
+                except Exception as e:
+                    st.error(f"Erro ao criar gráfico de controle: {str(e)}")
 
     with tab6:
         st.header("📋 Resumo Executivo")
@@ -933,13 +952,16 @@ def main():
         # Verificar estabilidade do processo
         if colunas_numericas:
             # Calcular coeficiente de variação médio
-            coef_variacao_medio = (dados_processados[colunas_numericas].std() / 
-                                 dados_processados[colunas_numericas].mean()).mean()
-            
-            if coef_variacao_medio > 0.5:
-                st.warning("⚠️ **Alta variabilidade** detectada no processo")
-            elif coef_variacao_medio < 0.1:
-                st.success("✅ **Baixa variabilidade** - Processo estável")
+            medias = dados_processados[colunas_numericas].mean()
+            stds = dados_processados[colunas_numericas].std()
+            coef_variacao = (stds / medias).replace([np.inf, -np.inf], np.nan).dropna()
+            if len(coef_variacao) > 0:
+                coef_variacao_medio = coef_variacao.mean()
+                
+                if coef_variacao_medio > 0.5:
+                    st.warning("⚠️ **Alta variabilidade** detectada no processo")
+                elif coef_variacao_medio < 0.1:
+                    st.success("✅ **Baixa variabilidade** - Processo estável")
 
     # Download dos dados processados
     st.sidebar.header("💾 Exportar Dados")

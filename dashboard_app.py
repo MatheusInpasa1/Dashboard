@@ -734,6 +734,37 @@ def criar_dispersao_regressao(dados, eixo_x, eixo_y, color_by=None):
         st.error(f"Erro ao criar gráfico de dispersão: {str(e)}")
         return go.Figure()
 
+# NOVA FUNÇÃO: Calcular estatísticas de correlação sem scipy
+def calcular_estatisticas_correlacao(dados, eixo_x, eixo_y):
+    """Calcula estatísticas de correlação sem usar scipy"""
+    try:
+        # Filtrar dados válidos
+        mask = ~dados[eixo_x].isna() & ~dados[eixo_y].isna()
+        dados_filtrados = dados[mask]
+        
+        if len(dados_filtrados) < 2:
+            return None, None, None, None
+        
+        x_vals = dados_filtrados[eixo_x].values
+        y_vals = dados_filtrados[eixo_y].values
+        
+        # Correlação Pearson
+        correlacao_pearson = np.corrcoef(x_vals, y_vals)[0, 1]
+        
+        # Correlação Spearman (usando ranks)
+        rank_x = pd.Series(x_vals).rank()
+        rank_y = pd.Series(y_vals).rank()
+        correlacao_spearman = np.corrcoef(rank_x, rank_y)[0, 1]
+        
+        # Regressão linear para R²
+        slope, intercept, r_squared = calcular_regressao_linear(x_vals, y_vals)
+        
+        return correlacao_pearson, correlacao_spearman, r_squared, slope
+        
+    except Exception as e:
+        st.error(f"Erro ao calcular estatísticas: {str(e)}")
+        return None, None, None, None
+
 def main():
     st.title("🏭 Dashboard de Análise de Processos Industriais")
     
@@ -906,7 +937,7 @@ def main():
                                      key=generate_unique_key("lie", coluna_limites))
                 st.session_state.lie_values[coluna_limites] = lie
 
-    # Abas principais - AGORA COM 8 ABAS COMPLETAS
+    # Abas principais
     tab1, tab2, tab3, tab4, tab5, tab6, tab7, tab8 = st.tabs([
         "📈 Análise Temporal", 
         "📊 Estatística Detalhada", 
@@ -1234,41 +1265,40 @@ def main():
                 if fig:
                     st.plotly_chart(fig, use_container_width=True)
                     
-                    # Estatísticas de correlação
+                    # Estatísticas de correlação usando a NOVA função
                     st.subheader("📊 Estatísticas de Correlação e Regressão")
                     
                     try:
-                        correlacao_pearson = dados_scatter[eixo_x].corr(dados_scatter[eixo_y])
-                        correlacao_spearman = dados_scatter[eixo_x].corr(dados_scatter[eixo_y], method='spearman')
-                        
-                        # Calcular regressão para obter R²
-                        slope, intercept, r_squared = calcular_regressao_linear(
-                            dados_scatter[eixo_x].values,
-                            dados_scatter[eixo_y].values
+                        # Usar a nova função que não depende do scipy
+                        correlacao_pearson, correlacao_spearman, r_squared, slope = calcular_estatisticas_correlacao(
+                            dados_scatter, eixo_x, eixo_y
                         )
                         
-                        col_stat1, col_stat2, col_stat3, col_stat4 = st.columns(4)
-                        with col_stat1:
-                            st.metric("Correlação (Pearson)", f"{correlacao_pearson:.4f}")
-                        with col_stat2:
-                            st.metric("Correlação (Spearman)", f"{correlacao_spearman:.4f}")
-                        with col_stat3:
-                            if r_squared is not None:
-                                st.metric("Coeficiente R²", f"{r_squared:.4f}")
-                        with col_stat4:
-                            if slope is not None:
-                                st.metric("Inclinação", f"{slope:.4f}")
-                        
-                        # Interpretação da correlação
-                        st.subheader("🔍 Interpretação da Correlação")
-                        correlacao_abs = abs(correlacao_pearson)
-                        
-                        if correlacao_abs > 0.7:
-                            st.success("**Forte correlação** - Relação muito significativa entre as variáveis")
-                        elif correlacao_abs > 0.3:
-                            st.warning("**Correlação moderada** - Relação moderada entre as variáveis")
+                        if correlacao_pearson is not None:
+                            col_stat1, col_stat2, col_stat3, col_stat4 = st.columns(4)
+                            with col_stat1:
+                                st.metric("Correlação (Pearson)", f"{correlacao_pearson:.4f}")
+                            with col_stat2:
+                                st.metric("Correlação (Spearman)", f"{correlacao_spearman:.4f}")
+                            with col_stat3:
+                                if r_squared is not None:
+                                    st.metric("Coeficiente R²", f"{r_squared:.4f}")
+                            with col_stat4:
+                                if slope is not None:
+                                    st.metric("Inclinação", f"{slope:.4f}")
+                            
+                            # Interpretação da correlação
+                            st.subheader("🔍 Interpretação da Correlação")
+                            correlacao_abs = abs(correlacao_pearson)
+                            
+                            if correlacao_abs > 0.7:
+                                st.success("**Forte correlação** - Relação muito significativa entre as variáveis")
+                            elif correlacao_abs > 0.3:
+                                st.warning("**Correlação moderada** - Relação moderada entre as variáveis")
+                            else:
+                                st.info("**Fraca ou nenhuma correlação** - Pouca relação entre as variáveis")
                         else:
-                            st.info("**Fraca ou nenhuma correlação** - Pouca relação entre as variáveis")
+                            st.warning("Não foi possível calcular as estatísticas de correlação")
                             
                     except Exception as e:
                         st.error(f"Erro ao calcular estatísticas: {str(e)}")

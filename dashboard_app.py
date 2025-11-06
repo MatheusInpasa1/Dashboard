@@ -8,10 +8,17 @@ from datetime import datetime
 import os
 import warnings
 import math
+import scipy.stats as stats
+from scipy.optimize import minimize, curve_fit
+from scipy import special
+import scipy.integrate as integrate
+from scipy.stats import f, t, norm, chi2
+import random
+from itertools import product
 warnings.filterwarnings('ignore')
 
 # Configuração da página
-st.set_page_config(page_title="Dashboard de Análise de Processos", layout="wide")
+st.set_page_config(page_title="Dashboard de Análise de Processos - Avançado", layout="wide")
 
 # Função para gerar IDs únicos
 def generate_unique_key(*args):
@@ -52,7 +59,7 @@ def detectar_outliers(dados, coluna):
     outliers_mask = (dados[coluna] < lower_bound) | (dados[coluna] > upper_bound)
     return dados[outliers_mask], outliers_mask
 
-# Função para detectar outliers usando Z-score (implementação manual)
+# Função para detectar outliers usando Z-score
 def detectar_outliers_zscore(dados, coluna, threshold=3):
     if coluna not in dados.columns:
         return pd.DataFrame(), pd.Series()
@@ -128,6 +135,342 @@ def criar_indicador_classificacao(cor, classificacao, cpk, percentual_fora):
     </div>
     """
     return html
+
+# ========== FUNÇÕES PARA ANÁLISES ESTATÍSTICAS AVANÇADAS ==========
+
+def analise_anova_um_fator(dados, variavel_resposta, fator):
+    """Análise de Variância (ANOVA) de um fator"""
+    try:
+        # Agrupar dados por fator
+        grupos = []
+        fatores_unicos = dados[fator].unique()
+        
+        for categoria in fatores_unicos:
+            grupo = dados[dados[fator] == categoria][variavel_resposta].dropna()
+            grupos.append(grupo)
+        
+        # Executar ANOVA
+        f_stat, p_value = stats.f_oneway(*grupos)
+        
+        # Calcular estatísticas descritivas
+        descritivas = {}
+        for categoria in fatores_unicos:
+            grupo_data = dados[dados[fator] == categoria][variavel_resposta].dropna()
+            descritivas[categoria] = {
+                'n': len(grupo_data),
+                'media': grupo_data.mean(),
+                'desvio_padrao': grupo_data.std(),
+                'mediana': grupo_data.median()
+            }
+        
+        return {
+            'f_statistic': f_stat,
+            'p_value': p_value,
+            'grupos': fatores_unicos.tolist(),
+            'descritivas': descritivas,
+            'significativo': p_value < 0.05
+        }
+    
+    except Exception as e:
+        st.error(f"Erro na ANOVA: {str(e)}")
+        return None
+
+def analise_anova_dois_fatores(dados, variavel_resposta, fator1, fator2):
+    """ANOVA de dois fatores com interação"""
+    try:
+        # Criar modelo usando regressão linear para ANOVA
+        formula = f'{variavel_resposta} ~ C({fator1}) + C({fator2}) + C({fator1}):C({fator2})'
+        
+        # Usar OLS para ANOVA
+        from statsmodels.formula.api import ols
+        from statsmodels.stats.anova import anova_lm
+        
+        model = ols(formula, data=dados).fit()
+        anova_results = anova_lm(model, typ=2)
+        
+        return {
+            'modelo': model,
+            'anova_table': anova_results,
+            'residuos': model.resid,
+            'fitted': model.fittedvalues
+        }
+    
+    except Exception as e:
+        st.error(f"Erro na ANOVA de dois fatores: {str(e)}")
+        return None
+
+def analise_regressao_multipla(dados, variavel_resposta, variaveis_predictoras):
+    """Análise de regressão múltipla"""
+    try:
+        from sklearn.linear_model import LinearRegression
+        from sklearn.metrics import r2_score, mean_squared_error
+        import statsmodels.api as sm
+        
+        # Preparar dados
+        X = dados[variaveis_predictoras]
+        y = dados[variavel_resposta]
+        
+        # Remover valores missing
+        mask = ~(X.isna().any(axis=1) | y.isna())
+        X_clean = X[mask]
+        y_clean = y[mask]
+        
+        # Adicionar constante para statsmodels
+        X_sm = sm.add_constant(X_clean)
+        
+        # Modelo statsmodels (para estatísticas detalhadas)
+        model_sm = sm.OLS(y_clean, X_sm).fit()
+        
+        # Modelo scikit-learn (para previsões)
+        model_sk = LinearRegression()
+        model_sk.fit(X_clean, y_clean)
+        
+        # Previsões
+        y_pred = model_sk.predict(X_clean)
+        
+        # Métricas
+        r2 = r2_score(y_clean, y_pred)
+        mse = mean_squared_error(y_clean, y_pred)
+        rmse = np.sqrt(mse)
+        
+        return {
+            'modelo_statsmodels': model_sm,
+            'modelo_sklearn': model_sk,
+            'r2': r2,
+            'mse': mse,
+            'rmse': rmse,
+            'coeficientes': dict(zip(['Intercepto'] + variaveis_predictoras, model_sk.intercept_, *model_sk.coef_)),
+            'residuos': y_clean - y_pred,
+            'previsoes': y_pred
+        }
+    
+    except Exception as e:
+        st.error(f"Erro na regressão múltipla: {str(e)}")
+        return None
+
+def teste_hipotese_media(dados, coluna, valor_referencia=0, alternativa='two-sided'):
+    """Teste de hipótese para média"""
+    try:
+        data_clean = dados[coluna].dropna()
+        
+        # Teste t para uma amostra
+        t_stat, p_value = stats.ttest_1samp(data_clean, valor_referencia, alternative=alternativa)
+        
+        # Intervalo de confiança
+        ci = stats.t.interval(0.95, len(data_clean)-1, loc=data_clean.mean(), scale=stats.sem(data_clean))
+        
+        return {
+            't_statistic': t_stat,
+            'p_value': p_value,
+            'media_amostral': data_clean.mean(),
+            'valor_referencia': valor_referencia,
+            'intervalo_confianca': ci,
+            'significativo': p_value < 0.05
+        }
+    
+    except Exception as e:
+        st.error(f"Erro no teste de hipótese: {str(e)}")
+        return None
+
+def analise_poder_estatistico(dados, coluna, efeito_detectavel, alpha=0.05):
+    """Análise de poder estatístico"""
+    try:
+        from statsmodels.stats.power import TTestPower
+        
+        data_clean = dados[coluna].dropna()
+        n = len(data_clean)
+        effect_size = efeito_detectavel / data_clean.std()
+        
+        # Calcular poder
+        power_analysis = TTestPower()
+        poder = power_analysis.power(effect_size=effect_size, nobs=n, alpha=alpha, alternative='two-sided')
+        
+        # Tamanho amostral necessário
+        n_necessario = power_analysis.solve_power(effect_size=effect_size, power=0.8, alpha=alpha, alternative='two-sided')
+        
+        return {
+            'poder_atual': poder,
+            'tamanho_amostral_atual': n,
+            'tamanho_amostral_necessario': n_necessario,
+            'effect_size': effect_size,
+            'alpha': alpha
+        }
+    
+    except Exception as e:
+        st.error(f"Erro na análise de poder: {str(e)}")
+        return None
+
+def simulacao_monte_carlo_capabilidade(media, desvio_padrao, lse, lie, n_simulacoes=10000):
+    """Simulação Monte Carlo para análise de capabilidade"""
+    try:
+        # Gerar amostras da distribuição normal
+        simulacoes = np.random.normal(media, desvio_padrao, n_simulacoes)
+        
+        # Calcular métricas de capabilidade
+        cpk_simulacoes = []
+        ppm_simulacoes = []
+        
+        for i in range(100):  # Amostras menores para calcular Cpk
+            amostra = np.random.choice(simulacoes, size=30, replace=True)
+            if desvio_padrao > 0:
+                cpk_superior = (lse - np.mean(amostra)) / (3 * np.std(amostra))
+                cpk_inferior = (np.mean(amostra) - lie) / (3 * np.std(amostra))
+                cpk = min(cpk_superior, cpk_inferior)
+                cpk_simulacoes.append(cpk)
+        
+        # Calcular PPM
+        fora_especificacao = np.sum((simulacoes > lse) | (simulacoes < lie))
+        ppm = (fora_especificacao / n_simulacoes) * 1e6
+        
+        return {
+            'media_simulacao': np.mean(simulacoes),
+            'desvio_padrao_simulacao': np.std(simulacoes),
+            'cpk_medio': np.mean(cpk_simulacoes),
+            'cpk_std': np.std(cpk_simulacoes),
+            'ppm_simulado': ppm,
+            'percentual_fora_simulado': (fora_especificacao / n_simulacoes) * 100,
+            'simulacoes': simulacoes
+        }
+    
+    except Exception as e:
+        st.error(f"Erro na simulação Monte Carlo: {str(e)}")
+        return None
+
+def otimizacao_processo(funcao_objetivo, variaveis, limites, metodo='nelder-mead'):
+    """Otimização de processo usando algoritmos de otimização"""
+    try:
+        # Função objetivo negativa para maximização
+        def objetivo(x):
+            return -funcao_objetivo(x)
+        
+        # Ponto inicial (centro dos limites)
+        x0 = [(lim[0] + lim[1]) / 2 for lim in limites]
+        
+        # Executar otimização
+        resultado = minimize(objetivo, x0, method=metodo, bounds=limites)
+        
+        return {
+            'otimo': resultado.x,
+            'valor_otimo': -resultado.fun,
+            'sucesso': resultado.success,
+            'mensagem': resultado.message,
+            'numero_iteracoes': resultado.nit
+        }
+    
+    except Exception as e:
+        st.error(f"Erro na otimização: {str(e)}")
+        return None
+
+def analise_superficie_resposta(dados, variavel_resposta, variaveis_entrada, grau=2):
+    """Análise de superfície de resposta"""
+    try:
+        from sklearn.preprocessing import PolynomialFeatures
+        from sklearn.linear_model import LinearRegression
+        from sklearn.metrics import r2_score
+        
+        # Preparar dados
+        X = dados[variaveis_entrada]
+        y = dados[variavel_resposta]
+        
+        # Criar features polinomiais
+        poly = PolynomialFeatures(degree=grau, include_bias=False)
+        X_poly = poly.fit_transform(X)
+        
+        # Ajustar modelo
+        model = LinearRegression()
+        model.fit(X_poly, y)
+        
+        # Previsões
+        y_pred = model.predict(X_poly)
+        r2 = r2_score(y, y_pred)
+        
+        # Coeficientes
+        feature_names = poly.get_feature_names_out(variaveis_entrada)
+        coeficientes = dict(zip(feature_names, model.coef_))
+        
+        return {
+            'modelo': model,
+            'r2': r2,
+            'coeficientes': coeficientes,
+            'intercepto': model.intercept_,
+            'poly_features': poly,
+            'previsoes': y_pred
+        }
+    
+    except Exception as e:
+        st.error(f"Erro na análise de superfície de resposta: {str(e)}")
+        return None
+
+def analise_series_temporais_avancada(dados, coluna, periodo=None):
+    """Análise avançada de séries temporais"""
+    try:
+        from statsmodels.tsa.seasonal import seasonal_decompose
+        from statsmodels.tsa.stattools import adfuller
+        
+        data_clean = dados[coluna].dropna()
+        
+        # Teste de estacionariedade
+        adf_result = adfuller(data_clean)
+        
+        # Decomposição sazonal (se período for fornecido)
+        decomposicao = None
+        if periodo and len(data_clean) > 2 * periodo:
+            decomposicao = seasonal_decompose(data_clean, model='additive', period=periodo)
+        
+        # Autocorrelação
+        autocorr = [data_clean.autocorr(lag=i) for i in range(1, min(21, len(data_clean)))]
+        
+        return {
+            'adf_statistic': adf_result[0],
+            'adf_pvalue': adf_result[1],
+            'estacionaria': adf_result[1] < 0.05,
+            'decomposicao': decomposicao,
+            'autocorrelacao': autocorr,
+            'tendencia': data_clean.rolling(window=min(7, len(data_clean)//10)).mean() if len(data_clean) > 10 else None
+        }
+    
+    except Exception as e:
+        st.error(f"Erro na análise de séries temporais: {str(e)}")
+        return None
+
+def analise_bayesiana_ab_test(controle, variacao, prior_alpha=1, prior_beta=1):
+    """Análise Bayesiana para A/B Testing"""
+    try:
+        # Conversão para sucessos e falhas se necessário
+        if all(x <= 1 for x in controle) and all(x <= 1 for x in variacao):
+            sucessos_controle = sum(controle)
+            sucessos_variacao = sum(variacao)
+            total_controle = len(controle)
+            total_variacao = len(variacao)
+        else:
+            # Assumir que são contagens
+            sucessos_controle = sum(controle)
+            sucessos_variacao = sum(variacao)
+            total_controle = len(controle)
+            total_variacao = len(variacao)
+        
+        # Posterior distributions (Beta)
+        posterior_controle = stats.beta(prior_alpha + sucessos_controle, prior_beta + total_controle - sucessos_controle)
+        posterior_variacao = stats.beta(prior_alpha + sucessos_variacao, prior_beta + total_variacao - sucessos_variacao)
+        
+        # Probabilidade de que variação é melhor que controle
+        amostras_controle = posterior_controle.rvs(10000)
+        amostras_variacao = posterior_variacao.rvs(10000)
+        prob_variacao_melhor = np.mean(amostras_variacao > amostras_controle)
+        
+        return {
+            'posterior_controle': posterior_controle,
+            'posterior_variacao': posterior_variacao,
+            'prob_variacao_melhor': prob_variacao_melhor,
+            'media_controle': posterior_controle.mean(),
+            'media_variacao': posterior_variacao.mean(),
+            'intervalo_controle': posterior_controle.interval(0.95),
+            'intervalo_variacao': posterior_variacao.interval(0.95)
+        }
+    
+    except Exception as e:
+        st.error(f"Erro na análise Bayesiana: {str(e)}")
+        return None
 
 # ========== FUNÇÕES PARA CARTA DE CONTROLE COM LSE/LIE ==========
 
@@ -526,7 +869,7 @@ def criar_histograma_capabilidade(dados, coluna, lse, lie, resultados):
     
     return fig
 
-# ========== FUNÇÕES PARA ANÁLISE ESTATÍSTICA ==========
+# ========== FUNÇÕES PARA ANÁLISE ESTATÍSTICA BÁSICA ==========
 
 def calcular_regressao_linear(x, y):
     """Calcula regressão linear manualmente"""
@@ -718,7 +1061,7 @@ def teste_normalidade_manual(data):
     return p_value
 
 def main():
-    st.title("🏭 Dashboard de Análise de Processos Industriais")
+    st.title("🏭 Dashboard de Análise de Processos Industriais - Avançado")
     
     # Inicializar estado da sessão
     session_defaults = {
@@ -889,8 +1232,8 @@ def main():
                                      key=generate_unique_key("lie", coluna_limites))
                 st.session_state.lie_values[coluna_limites] = lie
 
-    # Abas principais
-    tab1, tab2, tab3, tab4, tab5, tab6, tab7, tab8 = st.tabs([
+    # Abas principais - ADICIONANDO NOVAS ABAS AVANÇADAS
+    tab1, tab2, tab3, tab4, tab5, tab6, tab7, tab8, tab9, tab10, tab11 = st.tabs([
         "📈 Análise Temporal", 
         "📊 Estatística Detalhada", 
         "🔥 Correlações", 
@@ -898,6 +1241,9 @@ def main():
         "🎯 Carta de Controle",
         "📈 Controle Estatístico",
         "📊 Análise de Capabilidade",
+        "🔬 Estatística Avançada",
+        "🎲 Simulações Monte Carlo",
+        "⚙️ Otimização de Processos",
         "📋 Resumo Executivo"
     ])
 
@@ -1153,7 +1499,7 @@ def main():
                     col_ana1, col_ana2 = st.columns(2)
                     
                     with col_ana1:
-                        st.write("**📈 Top 10 Maiores Correlações:**")
+                        st.write("📈 Top 10 Maiores Correlações:")
                         top_correlations = df_corr.nlargest(10, '|Correlação|')
                         for _, row in top_correlations.iterrows():
                             corr_value = row['Correlação']
@@ -1164,7 +1510,7 @@ def main():
                             st.write("---")
                     
                     with col_ana2:
-                        st.write("**📉 Top 10 Menores Correlações:**")
+                        st.write("📉 Top 10 Menores Correlações:")
                         bottom_correlations = df_corr.nsmallest(10, '|Correlação|')
                         for _, row in bottom_correlations.iterrows():
                             corr_value = row['Correlação']
@@ -1868,8 +2214,643 @@ def main():
         else:
             st.warning("📊 Não há variáveis numéricas para análise de capabilidade.")
 
-    # ========== ABA 8: RESUMO EXECUTIVO ==========
+    # ========== ABA 8: ESTATÍSTICA AVANÇADAS ==========
     with tab8:
+        st.header("🔬 Análises Estatísticas Avançadas")
+        
+        st.markdown("""
+        **Análises Estatísticas Avançadas** incluem:
+        - ANOVA (Análise de Variância)
+        - Testes de Hipótese
+        - Análise de Poder Estatístico
+        - Regressão Múltipla
+        - Análise Bayesiana
+        """)
+        
+        # Seleção do tipo de análise avançada
+        tipo_analise_avancada = st.selectbox(
+            "Selecione o tipo de análise avançada:",
+            [
+                "ANOVA - Um Fator",
+                "Teste de Hipótese para Média",
+                "Análise de Poder Estatístico",
+                "Regressão Múltipla",
+                "Análise Bayesiana (A/B Testing)"
+            ],
+            key=generate_unique_key("tipo_analise_avancada", "tab8")
+        )
+        
+        if tipo_analise_avancada == "ANOVA - Um Fator":
+            st.subheader("📊 ANOVA - Análise de Variância de Um Fator")
+            
+            if len(colunas_numericas) > 0 and len(colunas_todas) > 1:
+                col_anova1, col_anova2 = st.columns(2)
+                with col_anova1:
+                    variavel_resposta = st.selectbox(
+                        "Variável Resposta (numérica):",
+                        colunas_numericas,
+                        key=generate_unique_key("anova_resposta", "tab8")
+                    )
+                with col_anova2:
+                    fator = st.selectbox(
+                        "Fator (categórica):",
+                        [col for col in colunas_todas if col != variavel_resposta],
+                        key=generate_unique_key("anova_fator", "tab8")
+                    )
+                
+                if st.button("📈 Executar ANOVA", use_container_width=True,
+                           key=generate_unique_key("executar_anova", "tab8")):
+                    
+                    resultado_anova = analise_anova_um_fator(dados_processados, variavel_resposta, fator)
+                    
+                    if resultado_anova:
+                        st.subheader("📋 Resultados da ANOVA")
+                        
+                        col_res1, col_res2 = st.columns(2)
+                        with col_res1:
+                            st.metric("Estatística F", f"{resultado_anova['f_statistic']:.4f}")
+                            st.metric("Valor-p", f"{resultado_anova['p_value']:.4f}")
+                        
+                        with col_res2:
+                            significativo = "✅ Significativo" if resultado_anova['significativo'] else "❌ Não Significativo"
+                            st.metric("Significância", significativo)
+                            st.metric("Número de Grupos", len(resultado_anova['grupos']))
+                        
+                        # Estatísticas descritivas por grupo
+                        st.subheader("📊 Estatísticas Descritivas por Grupo")
+                        descritivas_df = pd.DataFrame(resultado_anova['descritivas']).T
+                        st.dataframe(descritivas_df.style.format({
+                            'media': '{:.4f}',
+                            'desvio_padrao': '{:.4f}',
+                            'mediana': '{:.4f}'
+                        }))
+                        
+                        # Gráfico de boxplot por grupo
+                        fig = px.box(dados_processados, x=fator, y=variavel_resposta,
+                                    title=f"Distribuição de {variavel_resposta} por {fator}")
+                        st.plotly_chart(fig, use_container_width=True)
+        
+        elif tipo_analise_avancada == "Teste de Hipótese para Média":
+            st.subheader("🎯 Teste de Hipótese para Média")
+            
+            if colunas_numericas:
+                col_hip1, col_hip2 = st.columns(2)
+                with col_hip1:
+                    variavel_teste = st.selectbox(
+                        "Variável para teste:",
+                        colunas_numericas,
+                        key=generate_unique_key("hip_var", "tab8")
+                    )
+                with col_hip2:
+                    valor_referencia = st.number_input(
+                        "Valor de referência (H₀):",
+                        value=0.0,
+                        key=generate_unique_key("hip_valor_ref", "tab8")
+                    )
+                
+                alternativa = st.selectbox(
+                    "Hipótese alternativa:",
+                    ["two-sided", "greater", "less"],
+                    format_func=lambda x: {
+                        "two-sided": "Média ≠ Valor de referência",
+                        "greater": "Média > Valor de referência", 
+                        "less": "Média < Valor de referência"
+                    }[x],
+                    key=generate_unique_key("hip_alternativa", "tab8")
+                )
+                
+                if st.button("📊 Executar Teste de Hipótese", use_container_width=True,
+                           key=generate_unique_key("executar_hipotese", "tab8")):
+                    
+                    resultado_teste = teste_hipotese_media(
+                        dados_processados, variavel_teste, valor_referencia, alternativa
+                    )
+                    
+                    if resultado_teste:
+                        st.subheader("📋 Resultados do Teste de Hipótese")
+                        
+                        col_res1, col_res2, col_res3 = st.columns(3)
+                        with col_res1:
+                            st.metric("Estatística t", f"{resultado_teste['t_statistic']:.4f}")
+                            st.metric("Valor-p", f"{resultado_teste['p_value']:.4f}")
+                        
+                        with col_res2:
+                            st.metric("Média Amostral", f"{resultado_teste['media_amostral']:.4f}")
+                            st.metric("Valor de Referência", f"{resultado_teste['valor_referencia']:.4f}")
+                        
+                        with col_res3:
+                            significativo = "✅ Rejeita H₀" if resultado_teste['significativo'] else "❌ Não rejeita H₀"
+                            st.metric("Decisão", significativo)
+                        
+                        # Intervalo de confiança
+                        st.subheader("📊 Intervalo de Confiança 95%")
+                        ci = resultado_teste['intervalo_confianca']
+                        st.info(f"Intervalo de confiança: ({ci[0]:.4f}, {ci[1]:.4f})")
+        
+        elif tipo_analise_avancada == "Análise de Poder Estatístico":
+            st.subheader("📈 Análise de Poder Estatístico")
+            
+            if colunas_numericas:
+                col_poder1, col_poder2 = st.columns(2)
+                with col_poder1:
+                    variavel_poder = st.selectbox(
+                        "Variável para análise:",
+                        colunas_numericas,
+                        key=generate_unique_key("poder_var", "tab8")
+                    )
+                with col_poder2:
+                    efeito_detectavel = st.number_input(
+                        "Efeito mínimo detectável:",
+                        value=0.5,
+                        key=generate_unique_key("poder_efeito", "tab8")
+                    )
+                
+                alpha = st.slider(
+                    "Nível de significância (α):",
+                    min_value=0.01,
+                    max_value=0.10,
+                    value=0.05,
+                    step=0.01,
+                    key=generate_unique_key("poder_alpha", "tab8")
+                )
+                
+                if st.button("📊 Calcular Poder Estatístico", use_container_width=True,
+                           key=generate_unique_key("calcular_poder", "tab8")):
+                    
+                    resultado_poder = analise_poder_estatistico(
+                        dados_processados, variavel_poder, efeito_detectavel, alpha
+                    )
+                    
+                    if resultado_poder:
+                        st.subheader("📋 Resultados da Análise de Poder")
+                        
+                        col_res1, col_res2, col_res3 = st.columns(3)
+                        with col_res1:
+                            st.metric("Poder Atual", f"{resultado_poder['poder_atual']:.3f}")
+                            st.metric("Tamanho Amostral Atual", resultado_poder['tamanho_amostral_atual'])
+                        
+                        with col_res2:
+                            st.metric("Tamanho Amostral Necessário", f"{resultado_poder['tamanho_amostral_necessario']:.0f}")
+                            st.metric("Effect Size", f"{resultado_poder['effect_size']:.3f}")
+                        
+                        with col_res3:
+                            st.metric("Nível α", resultado_poder['alpha'])
+                        
+                        # Interpretação
+                        st.subheader("🔍 Interpretação do Poder Estatístico")
+                        poder = resultado_poder['poder_atual']
+                        
+                        if poder >= 0.8:
+                            st.success("✅ **Poder adequado** - Boa chance de detectar efeitos reais")
+                        elif poder >= 0.5:
+                            st.warning("⚠️ **Poder moderado** - Considerar aumentar o tamanho amostral")
+                        else:
+                            st.error("❌ **Poder insuficiente** - Alta chance de erro Tipo II")
+        
+        elif tipo_analise_avancada == "Regressão Múltipla":
+            st.subheader("📈 Regressão Múltipla")
+            
+            if len(colunas_numericas) > 1:
+                col_reg1, col_reg2 = st.columns(2)
+                with col_reg1:
+                    variavel_resposta = st.selectbox(
+                        "Variável Resposta (Y):",
+                        colunas_numericas,
+                        key=generate_unique_key("reg_resposta", "tab8")
+                    )
+                with col_reg2:
+                    variaveis_predictoras = st.multiselect(
+                        "Variáveis Preditivas (X):",
+                        [col for col in colunas_numericas if col != variavel_resposta],
+                        key=generate_unique_key("reg_predictoras", "tab8")
+                    )
+                
+                if variaveis_predictoras and st.button("📊 Executar Regressão Múltipla", 
+                                                     use_container_width=True,
+                                                     key=generate_unique_key("executar_regressao", "tab8")):
+                    
+                    resultado_regressao = analise_regressao_multipla(
+                        dados_processados, variavel_resposta, variaveis_predictoras
+                    )
+                    
+                    if resultado_regressao:
+                        st.subheader("📋 Resultados da Regressão Múltipla")
+                        
+                        # Métricas do modelo
+                        col_met1, col_met2, col_met3 = st.columns(3)
+                        with col_met1:
+                            st.metric("R²", f"{resultado_regressao['r2']:.4f}")
+                        with col_met2:
+                            st.metric("RMSE", f"{resultado_regressao['rmse']:.4f}")
+                        with col_met3:
+                            st.metric("MSE", f"{resultado_regressao['mse']:.4f}")
+                        
+                        # Coeficientes
+                        st.subheader("📊 Coeficientes do Modelo")
+                        coeficientes_df = pd.DataFrame({
+                            'Variável': list(resultado_regressao['coeficientes'].keys()),
+                            'Coeficiente': list(resultado_regressao['coeficientes'].values())
+                        })
+                        st.dataframe(coeficientes_df.style.format({'Coeficiente': '{:.4f}'}))
+                        
+                        # Gráfico de resíduos
+                        st.subheader("📈 Análise de Resíduos")
+                        fig_residuos = px.scatter(
+                            x=resultado_regressao['previsoes'],
+                            y=resultado_regressao['residuos'],
+                            labels={'x': 'Valores Preditos', 'y': 'Resíduos'},
+                            title="Gráfico de Resíduos vs Valores Preditos"
+                        )
+                        fig_residuos.add_hline(y=0, line_dash="dash", line_color="red")
+                        st.plotly_chart(fig_residuos, use_container_width=True)
+        
+        elif tipo_analise_avancada == "Análise Bayesiana (A/B Testing)":
+            st.subheader("🎲 Análise Bayesiana para A/B Testing")
+            
+            if len(colunas_numericas) >= 2:
+                st.info("""
+                **Análise Bayesiana para comparação de dois grupos (A/B Testing).**
+                Selecione duas variáveis numéricas para comparar.
+                """)
+                
+                col_bayes1, col_bayes2 = st.columns(2)
+                with col_bayes1:
+                    grupo_controle = st.selectbox(
+                        "Grupo Controle (A):",
+                        colunas_numericas,
+                        key=generate_unique_key("bayes_controle", "tab8")
+                    )
+                with col_bayes2:
+                    grupo_variacao = st.selectbox(
+                        "Grupo Variação (B):",
+                        [col for col in colunas_numericas if col != grupo_controle],
+                        key=generate_unique_key("bayes_variacao", "tab8")
+                    )
+                
+                # Parâmetros da prior
+                col_prior1, col_prior2 = st.columns(2)
+                with col_prior1:
+                    prior_alpha = st.number_input("Prior Alpha", value=1.0, min_value=0.1, key=generate_unique_key("prior_alpha", "tab8"))
+                with col_prior2:
+                    prior_beta = st.number_input("Prior Beta", value=1.0, min_value=0.1, key=generate_unique_key("prior_beta", "tab8"))
+                
+                if st.button("🎯 Executar Análise Bayesiana", use_container_width=True,
+                           key=generate_unique_key("executar_bayes", "tab8")):
+                    
+                    controle_data = dados_processados[grupo_controle].dropna()
+                    variacao_data = dados_processados[grupo_variacao].dropna()
+                    
+                    resultado_bayes = analise_bayesiana_ab_test(controle_data, variacao_data, prior_alpha, prior_beta)
+                    
+                    if resultado_bayes:
+                        st.subheader("📋 Resultados da Análise Bayesiana")
+                        
+                        col_res1, col_res2, col_res3 = st.columns(3)
+                        with col_res1:
+                            st.metric("Prob. B > A", f"{resultado_bayes['prob_variacao_melhor']:.3f}")
+                            st.metric("Média Controle", f"{resultado_bayes['media_controle']:.4f}")
+                        
+                        with col_res2:
+                            st.metric("Média Variação", f"{resultado_bayes['media_variacao']:.4f}")
+                            dif_media = resultado_bayes['media_variacao'] - resultado_bayes['media_controle']
+                            st.metric("Diferença", f"{dif_media:.4f}")
+                        
+                        with col_res3:
+                            intervalo_controle = resultado_bayes['intervalo_controle']
+                            st.metric("IC 95% Controle", f"({intervalo_controle[0]:.3f}, {intervalo_controle[1]:.3f})")
+                        
+                        # Interpretação
+                        st.subheader("🔍 Interpretação Bayesiana")
+                        prob = resultado_bayes['prob_variacao_melhor']
+                        
+                        if prob > 0.95:
+                            st.success("✅ **Evidência forte** de que B é melhor que A")
+                        elif prob > 0.8:
+                            st.warning("⚠️ **Evidência moderada** de que B é melhor que A")
+                        elif prob > 0.6:
+                            st.info("ℹ️ **Evidência fraca** de que B é melhor que A")
+                        else:
+                            st.error("❌ **Pouca evidência** de que B é melhor que A")
+
+    # ========== ABA 9: SIMULAÇÕES MONTE CARLO ==========
+    with tab9:
+        st.header("🎲 Simulações Monte Carlo")
+        
+        st.markdown("""
+        **Simulações Monte Carlo** permitem modelar a incerteza em processos através de simulações repetidas.
+        Útil para análise de risco, previsões e otimização sob incerteza.
+        """)
+        
+        # Configuração da simulação
+        st.subheader("⚙️ Configuração da Simulação")
+        
+        col_sim1, col_sim2, col_sim3 = st.columns(3)
+        with col_sim1:
+            n_simulacoes = st.number_input(
+                "Número de simulações:",
+                min_value=1000,
+                max_value=100000,
+                value=10000,
+                step=1000,
+                key=generate_unique_key("n_simulacoes", "tab9")
+            )
+        
+        with col_sim2:
+            # Seleção do tipo de simulação
+            tipo_simulacao = st.selectbox(
+                "Tipo de simulação:",
+                ["Capabilidade do Processo", "Risco de Não-Conformidade", "Previsão de Demanda"],
+                key=generate_unique_key("tipo_simulacao", "tab9")
+            )
+        
+        with col_sim3:
+            if tipo_simulacao == "Capabilidade do Processo":
+                if colunas_numericas:
+                    variavel_simulacao = st.selectbox(
+                        "Variável para simulação:",
+                        colunas_numericas,
+                        key=generate_unique_key("var_simulacao", "tab9")
+                    )
+        
+        if tipo_simulacao == "Capabilidade do Processo" and colunas_numericas:
+            st.subheader("🎯 Parâmetros do Processo")
+            
+            # Obter estatísticas atuais do processo
+            dados_variavel = dados_processados[variavel_simulacao].dropna()
+            media_atual = dados_variavel.mean()
+            std_atual = dados_variavel.std()
+            
+            col_param1, col_param2, col_param3 = st.columns(3)
+            with col_param1:
+                media_processo = st.number_input(
+                    "Média do processo:",
+                    value=float(media_atual),
+                    key=generate_unique_key("media_processo", "tab9")
+                )
+            with col_param2:
+                desvio_processo = st.number_input(
+                    "Desvio padrão do processo:",
+                    value=float(std_atual),
+                    key=generate_unique_key("desvio_processo", "tab9")
+                )
+            with col_param3:
+                # Limites de especificação
+                lse_sim = st.number_input(
+                    "LSE para simulação:",
+                    value=float(st.session_state.lse_values.get(variavel_simulacao, media_atual + 3*std_atual)),
+                    key=generate_unique_key("lse_sim", "tab9")
+                )
+                lie_sim = st.number_input(
+                    "LIE para simulação:",
+                    value=float(st.session_state.lie_values.get(variavel_simulacao, media_atual - 3*std_atual)),
+                    key=generate_unique_key("lie_sim", "tab9")
+                )
+            
+            if st.button("🎲 Executar Simulação Monte Carlo", use_container_width=True,
+                        key=generate_unique_key("executar_monte_carlo", "tab9")):
+                
+                with st.spinner("Executando simulação Monte Carlo..."):
+                    resultado_simulacao = simulacao_monte_carlo_capabilidade(
+                        media_processo, desvio_processo, lse_sim, lie_sim, n_simulacoes
+                    )
+                
+                if resultado_simulacao:
+                    st.subheader("📋 Resultados da Simulação")
+                    
+                    col_res1, col_res2, col_res3, col_res4 = st.columns(4)
+                    with col_res1:
+                        st.metric("Cpk Médio Simulado", f"{resultado_simulacao['cpk_medio']:.3f}")
+                        st.metric("Desvio Cpk", f"{resultado_simulacao['cpk_std']:.3f}")
+                    
+                    with col_res2:
+                        st.metric("PPM Simulado", f"{resultado_simulacao['ppm_simulado']:.0f}")
+                        st.metric("% Fora Especificação", f"{resultado_simulacao['percentual_fora_simulado']:.2f}%")
+                    
+                    with col_res3:
+                        st.metric("Média Simulada", f"{resultado_simulacao['media_simulacao']:.4f}")
+                        st.metric("Desvio Simulado", f"{resultado_simulacao['desvio_padrao_simulacao']:.4f}")
+                    
+                    with col_res4:
+                        st.metric("Nº Simulações", n_simulacoes)
+                    
+                    # Histograma das simulações
+                    st.subheader("📊 Distribuição das Simulações")
+                    fig_sim = px.histogram(
+                        x=resultado_simulacao['simulacoes'],
+                        nbins=50,
+                        title=f"Distribuição das {n_simulacoes} Simulações Monte Carlo"
+                    )
+                    
+                    # Adicionar limites de especificação
+                    fig_sim.add_vline(x=lse_sim, line_dash="dash", line_color="red", annotation_text="LSE")
+                    fig_sim.add_vline(x=lie_sim, line_dash="dash", line_color="red", annotation_text="LIE")
+                    fig_sim.add_vline(x=media_processo, line_dash="solid", line_color="green", annotation_text="Média")
+                    
+                    st.plotly_chart(fig_sim, use_container_width=True)
+                    
+                    # Análise de risco
+                    st.subheader("🚨 Análise de Risco")
+                    
+                    risco_alto = resultado_simulacao['percentual_fora_simulado'] > 5
+                    risco_medio = 1 < resultado_simulacao['percentual_fora_simulado'] <= 5
+                    risco_baixo = resultado_simulacao['percentual_fora_simulado'] <= 1
+                    
+                    if risco_alto:
+                        st.error("**Alto Risco** - Percentual significativo fora da especificação")
+                    elif risco_medio:
+                        st.warning("**Risco Moderado** - Alguns produtos fora da especificação")
+                    else:
+                        st.success("**Baixo Risco** - Processo dentro das especificações")
+                    
+                    # Recomendações
+                    st.subheader("💡 Recomendações")
+                    if resultado_simulacao['cpk_medio'] < 1.33:
+                        st.warning("""
+                        **Recomendações para melhoria:**
+                        - Reduzir a variabilidade do processo
+                        - Ajustar a média do processo para o centro da especificação
+                        - Revisar limites de especificação
+                        - Implementar controles estatísticos
+                        """)
+
+    # ========== ABA 10: OTIMIZAÇÃO DE PROCESSOS ==========
+    with tab10:
+        st.header("⚙️ Otimização de Processos")
+        
+        st.markdown("""
+        **Otimização de Processos** usando técnicas avançadas para encontrar as melhores configurações
+        que maximizam ou minimizam uma função objetivo.
+        """)
+        
+        # Seleção do tipo de otimização
+        st.subheader("🎯 Configuração da Otimização")
+        
+        tipo_otimizacao = st.selectbox(
+            "Tipo de otimização:",
+            ["Maximizar Rendimento", "Minimizar Custo", "Otimizar Múltiplos Objetivos"],
+            key=generate_unique_key("tipo_otimizacao", "tab10")
+        )
+        
+        if tipo_otimizacao in ["Maximizar Rendimento", "Minimizar Custo"]:
+            st.subheader("📊 Definição da Função Objetivo")
+            
+            if len(colunas_numericas) > 0:
+                if tipo_otimizacao == "Maximizar Rendimento":
+                    variavel_objetivo = st.selectbox(
+                        "Variável a ser maximizada:",
+                        colunas_numericas,
+                        key=generate_unique_key("var_maximizar", "tab10")
+                    )
+                else:
+                    variavel_objetivo = st.selectbox(
+                        "Variável a ser minimizada:",
+                        colunas_numericas,
+                        key=generate_unique_key("var_minimizar", "tab10")
+                    )
+                
+                # Variáveis de controle
+                st.subheader("🎛️ Variáveis de Controle")
+                variaveis_controle = st.multiselect(
+                    "Selecione as variáveis de controle:",
+                    [col for col in colunas_numericas if col != variavel_objetivo],
+                    key=generate_unique_key("var_controle", "tab10")
+                )
+                
+                if variaveis_controle:
+                    # Definir limites para cada variável de controle
+                    st.subheader("📏 Limites das Variáveis de Controle")
+                    limites = {}
+                    
+                    for i, var in enumerate(variaveis_controle):
+                        col_lim1, col_lim2 = st.columns(2)
+                        with col_lim1:
+                            min_val = st.number_input(
+                                f"Mínimo {var}:",
+                                value=float(dados_processados[var].min()),
+                                key=generate_unique_key(f"min_{var}", "tab10")
+                            )
+                        with col_lim2:
+                            max_val = st.number_input(
+                                f"Máximo {var}:",
+                                value=float(dados_processados[var].max()),
+                                key=generate_unique_key(f"max_{var}", "tab10")
+                            )
+                        limites[var] = (min_val, max_val)
+                    
+                    # Método de otimização
+                    metodo_otimizacao = st.selectbox(
+                        "Método de otimização:",
+                        ["nelder-mead", "powell", "cg", "bfgs"],
+                        format_func=lambda x: {
+                            "nelder-mead": "Nelder-Mead (Simplex)",
+                            "powell": "Powell",
+                            "cg": "Gradiente Conjugado",
+                            "bfgs": "BFGS"
+                        }[x],
+                        key=generate_unique_key("metodo_otimizacao", "tab10")
+                    )
+                    
+                    if st.button("⚡ Executar Otimização", use_container_width=True,
+                                key=generate_unique_key("executar_otimizacao", "tab10")):
+                        
+                        # Criar função objetivo baseada nos dados
+                        def criar_funcao_objetivo(dados, var_objetivo, vars_controle):
+                            """Cria função objetivo a partir dos dados históricos"""
+                            # Usar regressão múltipla para modelar a relação
+                            from sklearn.linear_model import LinearRegression
+                            
+                            X = dados[vars_controle]
+                            y = dados[var_objetivo]
+                            
+                            # Remover missing values
+                            mask = ~(X.isna().any(axis=1) | y.isna())
+                            X_clean = X[mask]
+                            y_clean = y[mask]
+                            
+                            if len(X_clean) < 2:
+                                return lambda x: 0
+                            
+                            model = LinearRegression()
+                            model.fit(X_clean, y_clean)
+                            
+                            def funcao_objetivo(x):
+                                x_array = np.array(x).reshape(1, -1)
+                                return model.predict(x_array)[0]
+                            
+                            return funcao_objetivo
+                        
+                        try:
+                            funcao_objetivo = criar_funcao_objetivo(
+                                dados_processados, variavel_objetivo, variaveis_controle
+                            )
+                            
+                            # Converter limites para formato do scipy
+                            limites_scipy = [limites[var] for var in variaveis_controle]
+                            
+                            resultado_otimizacao = otimizacao_processo(
+                                funcao_objetivo, variaveis_controle, limites_scipy, metodo_otimizacao
+                            )
+                            
+                            if resultado_otimizacao and resultado_otimizacao['sucesso']:
+                                st.subheader("✅ Resultados da Otimização")
+                                
+                                # Valores ótimos
+                                st.subheader("🎯 Valores Ótimos Encontrados")
+                                for i, var in enumerate(variaveis_controle):
+                                    st.metric(f"Valor Ótimo {var}", f"{resultado_otimizacao['otimo'][i]:.4f}")
+                                
+                                st.metric(
+                                    f"Valor {variavel_objetivo} Ótimo", 
+                                    f"{resultado_otimizacao['valor_otimo']:.4f}"
+                                )
+                                
+                                # Comparação com valores atuais
+                                st.subheader("📊 Comparação com Valores Atuais")
+                                valores_atuais = dados_processados[variaveis_controle].mean()
+                                
+                                comparacao_data = {
+                                    'Variável': variaveis_controle,
+                                    'Valor Atual': valores_atuais.values,
+                                    'Valor Ótimo': resultado_otimizacao['otimo'],
+                                    'Melhoria %': [
+                                        ((otimo - atual) / abs(atual)) * 100 if atual != 0 else 0
+                                        for atual, otimo in zip(valores_atuais.values, resultado_otimizacao['otimo'])
+                                    ]
+                                }
+                                
+                                comparacao_df = pd.DataFrame(comparacao_data)
+                                st.dataframe(comparacao_df.style.format({
+                                    'Valor Atual': '{:.4f}',
+                                    'Valor Ótimo': '{:.4f}',
+                                    'Melhoria %': '{:.2f}%'
+                                }))
+                                
+                                # Gráfico de comparação
+                                fig_comparacao = go.Figure()
+                                fig_comparacao.add_trace(go.Bar(
+                                    name='Valor Atual',
+                                    x=variaveis_controle,
+                                    y=valores_atuais.values
+                                ))
+                                fig_comparacao.add_trace(go.Bar(
+                                    name='Valor Ótimo',
+                                    x=variaveis_controle,
+                                    y=resultado_otimizacao['otimo']
+                                ))
+                                fig_comparacao.update_layout(
+                                    title="Comparação: Valores Atuais vs Ótimos",
+                                    barmode='group'
+                                )
+                                st.plotly_chart(fig_comparacao, use_container_width=True)
+                                
+                            else:
+                                st.error("❌ Otimização não convergiu. Tente ajustar os parâmetros.")
+                        
+                        except Exception as e:
+                            st.error(f"❌ Erro na otimização: {str(e)}")
+
+    # ========== ABA 11: RESUMO EXECUTIVO ==========
+    with tab11:
         st.header("📋 Resumo Executivo")
         
         # Métricas gerais
@@ -1931,6 +2912,28 @@ def main():
                     st.warning("⚠️ **Alta variabilidade** detectada no processo")
                 elif coef_variacao_medio < 0.1:
                     st.success("✅ **Baixa variabilidade** - Processo estável")
+        
+        # Recomendações gerais
+        st.subheader("💡 Recomendações Gerais")
+        
+        col_rec1, col_rec2 = st.columns(2)
+        with col_rec1:
+            st.info("""
+            **📈 Para Melhoria Contínua:**
+            - Implementar cartas de controle para variáveis críticas
+            - Realizar análises de capabilidade regularmente
+            - Identificar e eliminar causas especiais de variação
+            - Estabelecer limites de controle realistas
+            """)
+        
+        with col_rec2:
+            st.info("""
+            **🔧 Para Otimização:**
+            - Usar simulações Monte Carlo para análise de risco
+            - Aplicar técnicas de otimização para encontrar melhores configurações
+            - Considerar análises de sensibilidade
+            - Implementar sistemas de monitoramento contínuo
+            """)
 
     # Download dos dados processados
     st.sidebar.header("💾 Exportar Dados")

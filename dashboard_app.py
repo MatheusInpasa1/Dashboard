@@ -2084,8 +2084,8 @@ def main():
                 st.warning("**Correlação moderada** - Relação moderada entre as variáveis")
             else:
                 st.info("**Fraca ou nenhuma correlação** - Pouca relação entre as variáveis")
-    else:
-        st.warning("Não foi possível calcular as estatísticas de correlação")
+        else:
+            st.warning("Não foi possível calcular as estatísticas de correlação")
         
     except Exception as e:
         st.error(f"Erro ao calcular estatísticas: {str(e)}")

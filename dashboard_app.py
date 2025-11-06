@@ -2056,39 +2056,39 @@ def main():
                 if fig:
                     st.plotly_chart(fig, use_container_width=True)
                     
-# Estatísticas de correlação usando função corrigida
-st.subheader("📊 Estatísticas de Correlação e Regressão")
+    # Estatísticas de correlação usando função corrigida
+    st.subheader("📊 Estatísticas de Correlação e Regressão")
 
-try:
-    # Usar análise detalhada de correlação
-    resultado_corr = analise_correlacao_detalhada(dados_scatter, eixo_x, eixo_y)
+    try:
+        # Usar análise detalhada de correlação
+        resultado_corr = analise_correlacao_detalhada(dados_scatter, eixo_x, eixo_y)
     
-    if resultado_corr:
-        col_stat1, col_stat2, col_stat3, col_stat4 = st.columns(4)
-        with col_stat1:
-            st.metric("Correlação (Pearson)", f"{resultado_corr['pearson']:.4f}")
-        with col_stat2:
-            st.metric("Correlação (Spearman)", f"{resultado_corr['spearman']:.4f}")
-        with col_stat3:
-            st.metric("Coeficiente R²", f"{resultado_corr['r_squared']:.4f}")
-        with col_stat4:
-            st.metric("Inclinação", f"{resultado_corr['slope']:.4f}")
+        if resultado_corr:
+            col_stat1, col_stat2, col_stat3, col_stat4 = st.columns(4)
+            with col_stat1:
+                st.metric("Correlação (Pearson)", f"{resultado_corr['pearson']:.4f}")
+            with col_stat2:
+                st.metric("Correlação (Spearman)", f"{resultado_corr['spearman']:.4f}")
+            with col_stat3:
+                st.metric("Coeficiente R²", f"{resultado_corr['r_squared']:.4f}")
+            with col_stat4:
+                st.metric("Inclinação", f"{resultado_corr['slope']:.4f}")
            
-        # Interpretação da correlação
-        st.subheader("🔍 Interpretação da Correlação")
-        correlacao_abs = abs(resultado_corr['pearson'])
+            # Interpretação da correlação
+            st.subheader("🔍 Interpretação da Correlação")
+            correlacao_abs = abs(resultado_corr['pearson'])
         
-        if correlacao_abs > 0.7:
-            st.success("**Forte correlação** - Relação muito significativa entre as variáveis")
-        elif correlacao_abs > 0.3:
-            st.warning("**Correlação moderada** - Relação moderada entre as variáveis")
-        else:
-            st.info("**Fraca ou nenhuma correlação** - Pouca relação entre as variáveis")
+            if correlacao_abs > 0.7:
+                st.success("**Forte correlação** - Relação muito significativa entre as variáveis")
+            elif correlacao_abs > 0.3:
+                st.warning("**Correlação moderada** - Relação moderada entre as variáveis")
+            else:
+                st.info("**Fraca ou nenhuma correlação** - Pouca relação entre as variáveis")
     else:
         st.warning("Não foi possível calcular as estatísticas de correlação")
         
-except Exception as e:
-    st.error(f"Erro ao calcular estatísticas: {str(e)}")
+    except Exception as e:
+        st.error(f"Erro ao calcular estatísticas: {str(e)}")
 
     # ========== ABA 5: CARTA DE CONTROLE ==========
     with tab5:

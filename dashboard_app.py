@@ -1556,8 +1556,7 @@ def teste_normalidade_manual(data):
 # ========== FUNÇÃO MAIN COMPLETA ==========
 
 def main():
-    st.title("🏭 Dashboard de Análise de Processos Industriais - Avançado")
-    
+        
     # Inicializar estado da sessão
     session_defaults = {
         'dados_originais': None,

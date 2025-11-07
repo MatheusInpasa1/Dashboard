@@ -141,6 +141,26 @@ st.markdown("""
         border: 1px solid #dee2e6;
         margin: 1rem 0;
     }
+    .test-result {
+        padding: 10px;
+        border-radius: 5px;
+        margin: 5px 0;
+    }
+    .test-pass {
+        background-color: #d4edda;
+        border: 1px solid #c3e6cb;
+        color: #155724;
+    }
+    .test-warning {
+        background-color: #fff3cd;
+        border: 1px solid #ffeaa7;
+        color: #856404;
+    }
+    .test-fail {
+        background-color: #f8d7da;
+        border: 1px solid #f5c6cb;
+        color: #721c24;
+    }
 </style>
 """, unsafe_allow_html=True)
 
@@ -867,101 +887,135 @@ def calcular_regressao_linear(x, y):
     
     return slope, intercept, r_squared
 
-# ========== FUNÇÕES PARA ANÁLISE DE RESÍDUOS ==========
+# ========== NOVAS FUNÇÕES PARA ANÁLISE DE RESÍDUOS ==========
 
-def analise_residuos_completa(residuos, previsoes, variavel_resposta):
-    """Realiza análise completa dos resíduos da regressão"""
+def analise_residuos_regressao_simples(x, y):
+    """Análise completa de resíduos para regressão linear simples"""
+    try:
+        # Calcular regressão
+        slope, intercept, r_squared = calcular_regressao_linear(x, y)
+        
+        if slope is None:
+            return None
+        
+        # Calcular previsões e resíduos
+        y_pred = slope * x + intercept
+        residuos = y - y_pred
+        
+        # Estatísticas dos resíduos
+        stats_residuos = {
+            'media': np.mean(residuos),
+            'mediana': np.median(residuos),
+            'desvio_padrao': np.std(residuos),
+            'assimetria': pd.Series(residuos).skew(),
+            'curtose': pd.Series(residuos).kurtosis(),
+            'min': np.min(residuos),
+            'max': np.max(residuos)
+        }
+        
+        # Teste de normalidade dos resíduos
+        p_normalidade = teste_normalidade_manual(residuos)
+        
+        # Teste de homocedasticidade (correlação entre previsões e resíduos)
+        correlacao_previsoes_residuos = np.corrcoef(y_pred, residuos)[0, 1]
+        
+        # Detecção de outliers nos resíduos
+        outliers_residuos, _ = detectar_outliers_zscore(pd.DataFrame({'residuos': residuos}), 'residuos')
+        n_outliers = len(outliers_residuos)
+        percentual_outliers = (n_outliers / len(residuos)) * 100
+        
+        return {
+            'residuos': residuos,
+            'previsoes': y_pred,
+            'estatisticas': stats_residuos,
+            'p_normalidade': p_normalidade,
+            'correlacao_previsoes_residuos': correlacao_previsoes_residuos,
+            'n_outliers': n_outliers,
+            'percentual_outliers': percentual_outliers,
+            'slope': slope,
+            'intercept': intercept,
+            'r_squared': r_squared
+        }
     
-    analise = {}
-    
-    # Estatísticas básicas dos resíduos
-    analise['estatisticas'] = {
-        'media': np.mean(residuos),
-        'mediana': np.median(residuos),
-        'desvio_padrao': np.std(residuos),
-        'min': np.min(residuos),
-        'max': np.max(residuos),
-        'assimetria': pd.Series(residuos).skew(),
-        'curtose': pd.Series(residuos).kurtosis()
-    }
-    
-    # Teste de normalidade dos resíduos (aproximado)
-    analise['normalidade'] = {
-        'shapiro_wilk_aproximado': teste_normalidade_manual(residuos),
-        'interpretacao': "Resíduos normais" if abs(pd.Series(residuos).skew()) < 1 else "Resíduos não normais"
-    }
-    
-    # Detecção de outliers nos resíduos
-    outliers_residuos, _ = detectar_outliers_zscore(pd.DataFrame({'residuos': residuos}), 'residuos')
-    analise['outliers'] = {
-        'quantidade': len(outliers_residuos),
-        'percentual': (len(outliers_residuos) / len(residuos)) * 100
-    }
-    
-    # Homocedasticidade (variância constante)
-    correlacao_previsoes_residuos = np.corrcoef(previsoes, residuos)[0, 1]
-    analise['homocedasticidade'] = {
-        'correlacao_previsoes_residuos': correlacao_previsoes_residuos,
-        'interpretacao': "Homocedástico" if abs(correlacao_previsoes_residuos) < 0.3 else "Heterocedástico"
-    }
-    
-    return analise
+    except Exception as e:
+        st.error(f"Erro na análise de resíduos: {str(e)}")
+        return None
 
-def criar_graficos_residuos(residuos, previsoes, variavel_resposta):
-    """Cria gráficos completos para análise de resíduos"""
+def criar_graficos_residuos_completos(analise_residuos, x, y, var_x, var_y):
+    """Cria gráficos completos para análise de resíduos da regressão simples"""
     
+    residuos = analise_residuos['residuos']
+    previsoes = analise_residuos['previsoes']
+    
+    # 1. Gráfico de dispersão com linha de regressão
+    fig_dispersao = go.Figure()
+    
+    # Pontos de dados
+    fig_dispersao.add_trace(go.Scatter(
+        x=x, y=y, mode='markers', name='Dados',
+        marker=dict(color='blue', size=6, opacity=0.6)
+    ))
+    
+    # Linha de regressão
+    x_range = np.linspace(min(x), max(x), 100)
+    y_pred_line = analise_residuos['slope'] * x_range + analise_residuos['intercept']
+    
+    fig_dispersao.add_trace(go.Scatter(
+        x=x_range, y=y_pred_line, mode='lines', 
+        name=f'Regressão (R² = {analise_residuos["r_squared"]:.3f})',
+        line=dict(color='red', width=3)
+    ))
+    
+    fig_dispersao.update_layout(
+        title=f"Regressão Linear: {var_y} vs {var_x}",
+        xaxis_title=var_x,
+        yaxis_title=var_y
+    )
+    
+    # 2. Resíduos vs Valores Preditos
     fig_residuos_vs_previsoes = go.Figure()
     fig_residuos_vs_previsoes.add_trace(go.Scatter(
-        x=previsoes,
-        y=residuos,
-        mode='markers',
-        name='Resíduos',
+        x=previsoes, y=residuos, mode='markers', name='Resíduos',
         marker=dict(color='blue', size=6)
     ))
     fig_residuos_vs_previsoes.add_hline(y=0, line_dash="dash", line_color="red")
     fig_residuos_vs_previsoes.update_layout(
         title="Resíduos vs Valores Preditos",
         xaxis_title="Valores Preditos",
-        yaxis_title="Resíduos",
-        showlegend=False
+        yaxis_title="Resíduos"
     )
     
-    # Histograma dos resíduos
-    fig_histograma_residuos = px.histogram(
-        x=residuos,
-        nbins=30,
+    # 3. Histograma dos resíduos
+    fig_histograma = px.histogram(
+        x=residuos, nbins=30, 
         title="Distribuição dos Resíduos",
         labels={'x': 'Resíduos', 'y': 'Frequência'}
     )
-    fig_histograma_residuos.add_vline(x=0, line_dash="dash", line_color="red")
+    fig_histograma.add_vline(x=0, line_dash="dash", line_color="red")
     
-    # QQ Plot dos resíduos
-    fig_qq_residuos = criar_qq_plot_correto(pd.Series(residuos))
-    fig_qq_residuos.update_layout(title="Q-Q Plot dos Resíduos")
+    # 4. Q-Q Plot dos resíduos
+    fig_qq = criar_qq_plot_correto(pd.Series(residuos))
+    fig_qq.update_layout(title="Q-Q Plot dos Resíduos")
     
-    # Resíduos vs Ordem (para detectar autocorrelação)
-    fig_residuos_ordem = go.Figure()
-    fig_residuos_ordem.add_trace(go.Scatter(
-        x=list(range(len(residuos))),
-        y=residuos,
-        mode='lines+markers',
-        name='Resíduos',
-        line=dict(color='blue', width=1),
-        marker=dict(size=4)
+    # 5. Resíduos vs Variável Independente
+    fig_residuos_vs_x = go.Figure()
+    fig_residuos_vs_x.add_trace(go.Scatter(
+        x=x, y=residuos, mode='markers', name='Resíduos',
+        marker=dict(color='blue', size=6)
     ))
-    fig_residuos_ordem.add_hline(y=0, line_dash="dash", line_color="red")
-    fig_residuos_ordem.update_layout(
-        title="Resíduos vs Ordem das Observações",
-        xaxis_title="Ordem das Observações",
-        yaxis_title="Resíduos",
-        showlegend=False
+    fig_residuos_vs_x.add_hline(y=0, line_dash="dash", line_color="red")
+    fig_residuos_vs_x.update_layout(
+        title=f"Resíduos vs {var_x}",
+        xaxis_title=var_x,
+        yaxis_title="Resíduos"
     )
     
     return {
+        'dispersao_regressao': fig_dispersao,
         'residuos_vs_previsoes': fig_residuos_vs_previsoes,
-        'histograma_residuos': fig_histograma_residuos,
-        'qq_plot_residuos': fig_qq_residuos,
-        'residuos_ordem': fig_residuos_ordem
+        'histograma_residuos': fig_histograma,
+        'qq_plot': fig_qq,
+        'residuos_vs_x': fig_residuos_vs_x
     }
 
 def interpretar_analise_residuos(analise_residuos):
@@ -970,30 +1024,257 @@ def interpretar_analise_residuos(analise_residuos):
     interpretacoes = []
     
     # Normalidade
-    if analise_residuos['normalidade']['shapiro_wilk_aproximado'] > 0.05:
-        interpretacoes.append("✅ **Normalidade**: Os resíduos parecem seguir uma distribuição normal")
+    if analise_residuos['p_normalidade'] > 0.05:
+        interpretacoes.append("✅ **Normalidade**: Os resíduos seguem distribuição normal")
     else:
-        interpretacoes.append("⚠️ **Normalidade**: Os resíduos podem não ser normais")
-    
-    # Outliers
-    if analise_residuos['outliers']['percentual'] < 5:
-        interpretacoes.append("✅ **Outliers**: Poucos outliers detectados nos resíduos")
-    else:
-        interpretacoes.append(f"⚠️ **Outliers**: {analise_residuos['outliers']['percentual']:.1f}% dos resíduos são outliers")
+        interpretacoes.append("⚠️ **Normalidade**: Os resíduos não são normais")
     
     # Homocedasticidade
-    if analise_residuos['homocedasticidade']['interpretacao'] == "Homocedástico":
+    corr = abs(analise_residuos['correlacao_previsoes_residuos'])
+    if corr < 0.1:
         interpretacoes.append("✅ **Homocedasticidade**: Variância constante dos resíduos")
+    elif corr < 0.3:
+        interpretacoes.append("⚠️ **Homocedasticidade**: Possível heterocedasticidade leve")
     else:
-        interpretacoes.append("⚠️ **Homocedasticidade**: Possível heterocedasticidade detectada")
+        interpretacoes.append("❌ **Homocedasticidade**: Heterocedasticidade detectada")
     
-    # Media dos resíduos
+    # Outliers
+    if analise_residuos['percentual_outliers'] < 5:
+        interpretacoes.append("✅ **Outliers**: Poucos outliers nos resíduos")
+    else:
+        interpretacoes.append(f"⚠️ **Outliers**: {analise_residuos['percentual_outliers']:.1f}% dos resíduos são outliers")
+    
+    # Média dos resíduos
     if abs(analise_residuos['estatisticas']['media']) < 0.01:
-        interpretacoes.append("✅ **Média dos resíduos**: Próxima de zero (bom indicador)")
+        interpretacoes.append("✅ **Média dos resíduos**: Próxima de zero")
     else:
         interpretacoes.append("⚠️ **Média dos resíduos**: Distante de zero")
     
     return interpretacoes
+
+def criar_relatorio_residuos(analise_residuos):
+    """Cria relatório completo da análise de resíduos"""
+    
+    st.markdown("### 📊 Relatório de Análise de Resíduos")
+    
+    # Métricas principais
+    col1, col2, col3, col4 = st.columns(4)
+    
+    with col1:
+        st.metric("R²", f"{analise_residuos['r_squared']:.4f}")
+        st.metric("Inclinação", f"{analise_residuos['slope']:.4f}")
+    
+    with col2:
+        st.metric("p-valor Normalidade", f"{analise_residuos['p_normalidade']:.4f}")
+        st.metric("Intercepto", f"{analise_residuos['intercept']:.4f}")
+    
+    with col3:
+        st.metric("Correlação Res-Pred", f"{analise_residuos['correlacao_previsoes_residuos']:.4f}")
+        st.metric("Média Resíduos", f"{analise_residuos['estatisticas']['media']:.4f}")
+    
+    with col4:
+        st.metric("Outliers", f"{analise_residuos['n_outliers']}")
+        st.metric("% Outliers", f"{analise_residuos['percentual_outliers']:.1f}%")
+    
+    # Interpretação
+    st.markdown("### 🔍 Interpretação dos Resultados")
+    interpretacoes = interpretar_analise_residuos(analise_residuos)
+    
+    for interpretacao in interpretacoes:
+        st.write(interpretacao)
+    
+    # Recomendações
+    st.markdown("### 💡 Recomendações")
+    
+    if analise_residuos['p_normalidade'] < 0.05:
+        st.warning("""
+        **Resíduos não normais detectados:**
+        - Considere transformar as variáveis (log, sqrt, etc.)
+        - Verifique a presença de outliers influentes
+        - Considere modelos não lineares
+        """)
+    
+    if abs(analise_residuos['correlacao_previsoes_residuos']) > 0.3:
+        st.warning("""
+        **Heterocedasticidade detectada:**
+        - A variância dos resíduos não é constante
+        - Considere transformações nas variáveis
+        - Pode indicar relação não linear
+        """)
+    
+    if analise_residuos['percentual_outliers'] > 10:
+        st.warning("""
+        **Muitos outliers detectados:**
+        - Verifique a qualidade dos dados
+        - Investigue causas especiais
+        - Considere remover ou tratar outliers
+        """)
+    
+    if analise_residuos['r_squared'] < 0.5:
+        st.info("""
+        **R² baixo:**
+        - A variável independente explica pouca variação na dependente
+        - Considere incluir outras variáveis no modelo
+        - Pode haver relação não linear
+        """)
+
+# ========== FUNÇÕES PARA TESTES NÃO PARAMÉTRICOS ==========
+
+def teste_kruskal_wallis_sem_scipy(dados, variavel_resposta, fator):
+    """Teste de Kruskal-Wallis (ANOVA não paramétrica)"""
+    try:
+        # Agrupar dados por fator
+        grupos = []
+        fatores_unicos = dados[fator].dropna().unique()
+        
+        if len(fatores_unicos) < 2:
+            st.warning("Teste requer pelo menos 2 grupos diferentes")
+            return None
+        
+        for categoria in fatores_unicos:
+            grupo = dados[dados[fator] == categoria][variavel_resposta].dropna()
+            if len(grupo) > 0:
+                grupos.append(grupo)
+        
+        # Calcular ranks para todos os dados
+        todos_dados = np.concatenate(grupos)
+        ranks = pd.Series(todos_dados).rank()
+        
+        # Calcular estatística H
+        n_total = len(todos_dados)
+        h_stat = 0
+        
+        start_idx = 0
+        for grupo in grupos:
+            n_grupo = len(grupo)
+            if n_grupo > 0:
+                rank_medio_grupo = np.mean(ranks[start_idx:start_idx + n_grupo])
+                h_stat += n_grupo * (rank_medio_grupo - (n_total + 1) / 2) ** 2
+                start_idx += n_grupo
+        
+        h_stat = (12 / (n_total * (n_total + 1))) * h_stat
+        
+        # Valor-p aproximado usando distribuição qui-quadrado
+        df = len(grupos) - 1
+        if df > 0:
+            # Aproximação do valor-p usando distribuição qui-quadrado
+            p_value = 1 - chi_square_cdf(h_stat, df)
+        else:
+            p_value = 1.0
+        
+        return {
+            'h_statistic': h_stat,
+            'p_value': p_value,
+            'n_grupos': len(grupos),
+            'n_total': n_total,
+            'significativo': p_value < 0.05
+        }
+    
+    except Exception as e:
+        st.error(f"Erro no teste de Kruskal-Wallis: {str(e)}")
+        return None
+
+def teste_mann_whitney_sem_scipy(grupo1, grupo2):
+    """Teste de Mann-Whitney U (não paramétrico para 2 grupos)"""
+    try:
+        grupo1 = grupo1.dropna()
+        grupo2 = grupo2.dropna()
+        
+        if len(grupo1) == 0 or len(grupo2) == 0:
+            st.warning("Grupos vazios para teste Mann-Whitney")
+            return None
+        
+        # Combinar dados e calcular ranks
+        todos_dados = np.concatenate([grupo1, grupo2])
+        ranks = pd.Series(todos_dados).rank()
+        
+        n1, n2 = len(grupo1), len(grupo2)
+        r1 = np.sum(ranks[:n1])
+        
+        # Estatística U
+        u1 = r1 - n1 * (n1 + 1) / 2
+        u2 = n1 * n2 - u1
+        
+        u_stat = min(u1, u2)
+        
+        # Valor-p aproximado (para grandes amostras)
+        if n1 > 20 and n2 > 20:
+            # Aproximação normal para grandes amostras
+            mean_u = n1 * n2 / 2
+            std_u = np.sqrt(n1 * n2 * (n1 + n2 + 1) / 12)
+            z = (u_stat - mean_u) / std_u
+            p_value = 2 * (1 - 0.5 * (1 + math.erf(abs(z) / math.sqrt(2))))
+        else:
+            # Aproximação simples para amostras pequenas
+            p_value = 0.05 if u_stat < (n1 * n2 / 4) else 0.5
+        
+        return {
+            'u_statistic': u_stat,
+            'p_value': p_value,
+            'n1': n1,
+            'n2': n2,
+            'significativo': p_value < 0.05
+        }
+    
+    except Exception as e:
+        st.error(f"Erro no teste de Mann-Whitney: {str(e)}")
+        return None
+
+def chi_square_cdf(x, df):
+    """Função de distribuição acumulada aproximada para qui-quadrado"""
+    if df <= 0:
+        return 0.0
+    
+    # Aproximação usando distribuição gama
+    if x <= 0:
+        return 0.0
+    
+    # Usando aproximação para função gama incompleta
+    return 1 - math.exp(-x/2) * sum((x/2)**k / math.factorial(k) for k in range(int(df/2) + 1))
+
+def analise_nao_parametrica_completa(dados, variavel_resposta, fator):
+    """Análise não paramétrica completa para comparação de grupos"""
+    try:
+        fatores_unicos = dados[fator].dropna().unique()
+        
+        if len(fatores_unicos) < 2:
+            st.warning("Análise requer pelo menos 2 grupos diferentes")
+            return None
+        
+        resultados = {}
+        
+        # Kruskal-Wallis para múltiplos grupos
+        if len(fatores_unicos) > 2:
+            resultados['kruskal_wallis'] = teste_kruskal_wallis_sem_scipy(dados, variavel_resposta, fator)
+        
+        # Mann-Whitney para pares de grupos (quando há 2 grupos)
+        if len(fatores_unicos) == 2:
+            grupo1 = dados[dados[fator] == fatores_unicos[0]][variavel_resposta]
+            grupo2 = dados[dados[fator] == fatores_unicos[1]][variavel_resposta]
+            resultados['mann_whitney'] = teste_mann_whitney_sem_scipy(grupo1, grupo2)
+        
+        # Estatísticas descritivas não paramétricas
+        descritivas = {}
+        for categoria in fatores_unicos:
+            grupo_data = dados[dados[fator] == categoria][variavel_resposta].dropna()
+            descritivas[str(categoria)] = {
+                'n': len(grupo_data),
+                'mediana': np.median(grupo_data),
+                'q1': np.percentile(grupo_data, 25),
+                'q3': np.percentile(grupo_data, 75),
+                'min': np.min(grupo_data),
+                'max': np.max(grupo_data),
+                'iqr': np.percentile(grupo_data, 75) - np.percentile(grupo_data, 25)
+            }
+        
+        resultados['descritivas'] = descritivas
+        resultados['n_grupos'] = len(fatores_unicos)
+        
+        return resultados
+    
+    except Exception as e:
+        st.error(f"Erro na análise não paramétrica: {str(e)}")
+        return None
 
 # ========== FUNÇÕES PARA CARTA DE CONTROLE COM LSE/LIE ==========
 
@@ -1783,7 +2064,7 @@ def main():
                                     title=f"Relação Temporal de {coluna_valor}")
                 else:  # Boxplot Temporal
                     # Criar períodos mensais para boxplot
-                    dados_temp['Periodo'] = dados_temp[coluna_data].dt.to_period('M').astype(str)
+                    dados_temp['Periodo'] = dados_temp[coluna_data].dt.to_period('M').astypes(str)
                     fig = px.box(dados_temp, x='Periodo', y=coluna_valor,
                                 title=f"Distribuição Mensal de {coluna_valor}")
                 
@@ -2017,7 +2298,7 @@ def main():
 
     # ========== ABA 4: DISPERSÃO & REGRESSÃO ==========
     with tab4:
-        st.header("🔍 Gráficos de Dispersão com Regressão")
+        st.header("🔍 Gráficos de Dispersão com Regressão e Análise de Resíduos")
         
         if len(colunas_numericas) >= 2:
             col1, col2 = st.columns(2)
@@ -2032,8 +2313,8 @@ def main():
                 # Opções avançadas
                 col_opt1, col_opt2, col_opt3 = st.columns(3)
                 with col_opt1:
-                    remover_outliers_grafico = st.checkbox("📉 Remover outliers",
-                                                          key=generate_unique_key("remove_scatter_outliers", f"{eixo_x}_{eixo_y}"))
+                    # NÃO remover outliers para análise de resíduos
+                    st.info("ℹ️ Para análise de resíduos, outliers NÃO são removidos")
                 with col_opt2:
                     mostrar_regressao = st.checkbox("📈 Mostrar regressão", value=True,
                                                    key=generate_unique_key("show_regression", f"{eixo_x}_{eixo_y}"))
@@ -2042,19 +2323,50 @@ def main():
                                            key=generate_unique_key("color_by", f"{eixo_x}_{eixo_y}"))
                 
                 dados_scatter = dados_processados.copy()
-                if remover_outliers_grafico:
-                    outliers_x, outliers_mask_x = detectar_outliers(dados_scatter, eixo_x)
-                    outliers_y, outliers_mask_y = detectar_outliers(dados_scatter, eixo_y)
-                    outliers_mask = outliers_mask_x | outliers_mask_y
-                    dados_scatter = dados_scatter[~outliers_mask]
-                    st.info(f"📊 {outliers_mask.sum()} outliers removidos para visualização")
                 
-                # Usar a função para criar gráfico de dispersão
-                fig = criar_dispersao_regressao(dados_scatter, eixo_x, eixo_y, color_by if color_by else None)
+                # Gráfico de dispersão básico
+                fig_dispersao = criar_dispersao_regressao(dados_scatter, eixo_x, eixo_y, color_by if color_by else None)
+                st.plotly_chart(fig_dispersao, use_container_width=True)
                 
-                if fig:
-                    st.plotly_chart(fig, use_container_width=True)
+                # ========== ANÁLISE DE RESÍDUOS ==========
+                st.markdown("---")
+                st.subheader("📊 Análise Completa de Resíduos")
+                
+                # Preparar dados para análise
+                dados_clean = dados_scatter[[eixo_x, eixo_y]].dropna()
+                x_vals = dados_clean[eixo_x].values
+                y_vals = dados_clean[eixo_y].values
+                
+                if len(x_vals) > 1 and len(y_vals) > 1:
+                    # Realizar análise de resíduos
+                    analise_residuos = analise_residuos_regressao_simples(x_vals, y_vals)
                     
+                    if analise_residuos:
+                        # Criar gráficos de resíduos
+                        graficos_residuos = criar_graficos_residuos_completos(
+                            analise_residuos, x_vals, y_vals, eixo_x, eixo_y
+                        )
+                        
+                        # Exibir gráficos em duas colunas
+                        col_graf1, col_graf2 = st.columns(2)
+                        
+                        with col_graf1:
+                            st.plotly_chart(graficos_residuos['dispersao_regressao'], use_container_width=True)
+                            st.plotly_chart(graficos_residuos['residuos_vs_previsoes'], use_container_width=True)
+                            st.plotly_chart(graficos_residuos['residuos_vs_x'], use_container_width=True)
+                        
+                        with col_graf2:
+                            st.plotly_chart(graficos_residuos['histograma_residuos'], use_container_width=True)
+                            st.plotly_chart(graficos_residuos['qq_plot'], use_container_width=True)
+                        
+                        # Relatório de análise de resíduos
+                        criar_relatorio_residuos(analise_residuos)
+                        
+                    else:
+                        st.error("Não foi possível realizar a análise de resíduos")
+                else:
+                    st.warning("Dados insuficientes para análise de resíduos")
+        
         # Estatísticas de correlação usando função corrigida
         st.subheader("📊 Estatísticas de Correlação e Regressão")
 
@@ -2636,6 +2948,7 @@ def main():
         - Regressão Múltipla
         - Análise Bayesiana
         - Simulações Monte Carlo
+        - Testes Não Paramétricos
         """)
         
         # Seleção do tipo de análise avançada
@@ -2643,6 +2956,7 @@ def main():
             "Selecione o tipo de análise avançada:",
             [
                 "ANOVA - Um Fator",
+                "Testes Não Paramétricos",
                 "Teste de Hipótese para Média",
                 "Análise de Poder Estatístico",
                 "Regressão Múltipla",
@@ -2670,27 +2984,66 @@ def main():
                         key=generate_unique_key("anova_fator", "tab7")
                     )
                 
+                # Opção para teste não paramétrico
+                usar_nao_parametrico = st.checkbox(
+                    "Usar teste não paramétrico (Kruskal-Wallis)",
+                    key=generate_unique_key("usar_nao_parametrico", "tab7")
+                )
+                
                 if st.button("📈 Executar ANOVA", use_container_width=True,
                            key=generate_unique_key("executar_anova", "tab7")):
                     
-                    resultado_anova = analise_anova_um_fator_sem_scipy(dados_processados, variavel_resposta, fator)
+                    if usar_nao_parametrico:
+                        # Teste não paramétrico Kruskal-Wallis
+                        resultado_nao_param = analise_nao_parametrica_completa(dados_processados, variavel_resposta, fator)
+                        
+                        if resultado_nao_param and 'kruskal_wallis' in resultado_nao_param:
+                            resultado = resultado_nao_param['kruskal_wallis']
+                            st.subheader("📋 Resultados do Teste de Kruskal-Wallis")
+                            
+                            col_res1, col_res2 = st.columns(2)
+                            with col_res1:
+                                st.metric("Estatística H", f"{resultado['h_statistic']:.4f}")
+                                st.metric("Valor-p", f"{resultado['p_value']:.4f}")
+                            
+                            with col_res2:
+                                significativo = "✅ Significativo" if resultado['significativo'] else "❌ Não Significativo"
+                                st.metric("Significância", significativo)
+                                st.metric("Número de Grupos", resultado_nao_param['n_grupos'])
+                            
+                            st.info("""
+                            **📝 Sobre o Teste de Kruskal-Wallis:**
+                            - Teste não paramétrico equivalente à ANOVA
+                            - Não assume normalidade dos dados
+                            - Usa ranks em vez dos valores originais
+                            - Adequado para dados ordinais ou não normais
+                            """)
+                    else:
+                        # ANOVA paramétrica tradicional
+                        resultado_anova = analise_anova_um_fator_sem_scipy(dados_processados, variavel_resposta, fator)
+                        
+                        if resultado_anova:
+                            st.subheader("📋 Resultados da ANOVA")
+                            
+                            col_res1, col_res2 = st.columns(2)
+                            with col_res1:
+                                st.metric("Estatística F", f"{resultado_anova['f_statistic']:.4f}")
+                                st.metric("Valor-p", f"{resultado_anova['p_value']:.4f}")
+                            
+                            with col_res2:
+                                significativo = "✅ Significativo" if resultado_anova['significativo'] else "❌ Não Significativo"
+                                st.metric("Significância", significativo)
+                                st.metric("Número de Grupos", len(resultado_anova['grupos']))
                     
-                    if resultado_anova:
-                        st.subheader("📋 Resultados da ANOVA")
-                        
-                        col_res1, col_res2 = st.columns(2)
-                        with col_res1:
-                            st.metric("Estatística F", f"{resultado_anova['f_statistic']:.4f}")
-                            st.metric("Valor-p", f"{resultado_anova['p_value']:.4f}")
-                        
-                        with col_res2:
-                            significativo = "✅ Significativo" if resultado_anova['significativo'] else "❌ Não Significativo"
-                            st.metric("Significância", significativo)
-                            st.metric("Número de Grupos", len(resultado_anova['grupos']))
-                        
-                        # Estatísticas descritivas por grupo
+                    # Estatísticas descritivas por grupo (comum a ambos os testes)
+                    if ('resultado_anova' in locals() and resultado_anova) or ('resultado_nao_param' in locals() and resultado_nao_param):
                         st.subheader("📊 Estatísticas Descritivas por Grupo")
-                        descritivas_df = pd.DataFrame(resultado_anova['descritivas']).T
+                        
+                        if usar_nao_parametrico and resultado_nao_param:
+                            descritivas_df = pd.DataFrame(resultado_nao_param['descritivas']).T
+                        else:
+                            descritivas_df = pd.DataFrame(resultado_anova['descritivas']).T
+                        
                         st.dataframe(descritivas_df.style.format({
                             'media': '{:.4f}',
                             'desvio_padrao': '{:.4f}',
@@ -2703,6 +3056,99 @@ def main():
                         fig = px.box(dados_processados, x=fator, y=variavel_resposta,
                                     title=f"Distribuição de {variavel_resposta} por {fator}")
                         st.plotly_chart(fig, use_container_width=True)
+        
+        elif tipo_analise_avancada == "Testes Não Paramétricos":
+            st.subheader("🎯 Testes Não Paramétricos para Comparação de Grupos")
+            
+            if len(colunas_numericas) > 0 and len(colunas_todas) > 1:
+                col_test1, col_test2 = st.columns(2)
+                with col_test1:
+                    variavel_resposta = st.selectbox(
+                        "Variável Resposta (numérica):",
+                        colunas_numericas,
+                        key=generate_unique_key("np_resposta", "tab7")
+                    )
+                with col_test2:
+                    fator = st.selectbox(
+                        "Fator (categórica):",
+                        [col for col in colunas_todas if col != variavel_resposta],
+                        key=generate_unique_key("np_fator", "tab7")
+                    )
+                
+                if st.button("🎯 Executar Análise Não Paramétrica", use_container_width=True,
+                           key=generate_unique_key("executar_nao_param", "tab7")):
+                    
+                    resultado_nao_param = analise_nao_parametrica_completa(dados_processados, variavel_resposta, fator)
+                    
+                    if resultado_nao_param:
+                        fatores_unicos = dados_processados[fator].dropna().unique()
+                        
+                        # Kruskal-Wallis para múltiplos grupos
+                        if len(fatores_unicos) > 2 and 'kruskal_wallis' in resultado_nao_param:
+                            resultado_kw = resultado_nao_param['kruskal_wallis']
+                            
+                            st.subheader("📊 Teste de Kruskal-Wallis (Múltiplos Grupos)")
+                            col_kw1, col_kw2, col_kw3 = st.columns(3)
+                            with col_kw1:
+                                st.metric("Estatística H", f"{resultado_kw['h_statistic']:.4f}")
+                            with col_kw2:
+                                st.metric("Valor-p", f"{resultado_kw['p_value']:.4f}")
+                            with col_kw3:
+                                sig = "✅ Significativo" if resultado_kw['significativo'] else "❌ Não Significativo"
+                                st.metric("Resultado", sig)
+                        
+                        # Mann-Whitney para 2 grupos
+                        elif len(fatores_unicos) == 2 and 'mann_whitney' in resultado_nao_param:
+                            resultado_mw = resultado_nao_param['mann_whitney']
+                            
+                            st.subheader("📊 Teste de Mann-Whitney U (2 Grupos)")
+                            col_mw1, col_mw2, col_mw3 = st.columns(3)
+                            with col_mw1:
+                                st.metric("Estatística U", f"{resultado_mw['u_statistic']:.4f}")
+                            with col_mw2:
+                                st.metric("Valor-p", f"{resultado_mw['p_value']:.4f}")
+                            with col_mw3:
+                                sig = "✅ Significativo" if resultado_mw['significativo'] else "❌ Não Significativo"
+                                st.metric("Resultado", sig)
+                        
+                        # Estatísticas descritivas não paramétricas
+                        st.subheader("📈 Estatísticas Descritivas Não Paramétricas")
+                        descritivas_df = pd.DataFrame(resultado_nao_param['descritivas']).T
+                        st.dataframe(descritivas_df.style.format({
+                            'mediana': '{:.4f}',
+                            'q1': '{:.4f}',
+                            'q3': '{:.4f}',
+                            'min': '{:.4f}',
+                            'max': '{:.4f}',
+                            'iqr': '{:.4f}'
+                        }))
+                        
+                        # Gráficos
+                        st.subheader("📊 Visualizações")
+                        col_viz1, col_viz2 = st.columns(2)
+                        
+                        with col_viz1:
+                            # Boxplot
+                            fig_box = px.box(dados_processados, x=fator, y=variavel_resposta,
+                                           title=f"Distribuição de {variavel_resposta} por {fator}")
+                            st.plotly_chart(fig_box, use_container_width=True)
+                        
+                        with col_viz2:
+                            # Violin plot
+                            fig_violin = px.violin(dados_processados, x=fator, y=variavel_resposta,
+                                                 title=f"Distribuição de Densidade - {variavel_resposta} por {fator}")
+                            st.plotly_chart(fig_violin, use_container_width=True)
+                        
+                        # Interpretação
+                        st.subheader("🔍 Interpretação dos Testes Não Paramétricos")
+                        st.info("""
+                        **📝 Sobre Testes Não Paramétricos:**
+                        - **Vantagens**: Não assumem distribuição normal, robustos a outliers
+                        - **Adequados para**: Dados ordinais, distribuições não normais, amostras pequenas
+                        - **Kruskal-Wallis**: Equivalente não paramétrico da ANOVA
+                        - **Mann-Whitney**: Equivalente não paramétrico do teste t para 2 grupos
+                        - **Interpretação**: Rejeitar H₀ indica diferenças significativas entre grupos
+                        """)
         
         elif tipo_analise_avancada == "Teste de Hipótese para Média":
             st.subheader("🎯 Teste de Hipótese para Média")
@@ -2876,85 +3322,6 @@ def main():
                             'Estatística t': '{:.4f}',
                             'Valor-p': '{:.4f}'
                         }))
-                        
-                        # ========== ANÁLISE DE RESÍDUOS ==========
-                        st.subheader("🔍 Análise de Resíduos")
-                        
-                        # Realizar análise completa dos resíduos
-                        analise_residuos = analise_residuos_completa(
-                            resultado_regressao['residuos'],
-                            resultado_regressao['previsoes'],
-                            variavel_resposta
-                        )
-                        
-                        # Criar gráficos de resíduos
-                        graficos_residuos = criar_graficos_residuos(
-                            resultado_regressao['residuos'],
-                            resultado_regressao['previsoes'],
-                            variavel_resposta
-                        )
-                        
-                        # Exibir gráficos em duas colunas
-                        col_res1, col_res2 = st.columns(2)
-                        
-                        with col_res1:
-                            st.plotly_chart(graficos_residuos['residuos_vs_previsoes'], use_container_width=True)
-                            st.plotly_chart(graficos_residuos['histograma_residuos'], use_container_width=True)
-                        
-                        with col_res2:
-                            st.plotly_chart(graficos_residuos['qq_plot_residuos'], use_container_width=True)
-                            st.plotly_chart(graficos_residuos['residuos_ordem'], use_container_width=True)
-                        
-                        # Estatísticas dos resíduos
-                        st.subheader("📊 Estatísticas dos Resíduos")
-                        
-                        col_stat1, col_stat2, col_stat3, col_stat4 = st.columns(4)
-                        with col_stat1:
-                            st.metric("Média", f"{analise_residuos['estatisticas']['media']:.4f}")
-                            st.metric("Mediana", f"{analise_residuos['estatisticas']['mediana']:.4f}")
-                        with col_stat2:
-                            st.metric("Desvio Padrão", f"{analise_residuos['estatisticas']['desvio_padrao']:.4f}")
-                            st.metric("Assimetria", f"{analise_residuos['estatisticas']['assimetria']:.4f}")
-                        with col_stat3:
-                            st.metric("Curtose", f"{analise_residuos['estatisticas']['curtose']:.4f}")
-                            st.metric("Outliers", f"{analise_residuos['outliers']['quantidade']}")
-                        with col_stat4:
-                            st.metric("p-valor Normalidade", f"{analise_residuos['normalidade']['shapiro_wilk_aproximado']:.4f}")
-                            st.metric("Correlação Res-Pred", f"{analise_residuos['homocedasticidade']['correlacao_previsoes_residuos']:.4f}")
-                        
-                        # Interpretação da análise de resíduos
-                        st.subheader("📝 Interpretação da Análise de Resíduos")
-                        interpretacoes = interpretar_analise_residuos(analise_residuos)
-                        
-                        for interpretacao in interpretacoes:
-                            st.write(interpretacao)
-                        
-                        # Recomendações baseadas na análise de resíduos
-                        st.subheader("💡 Recomendações")
-                        
-                        if analise_residuos['normalidade']['shapiro_wilk_aproximado'] < 0.05:
-                            st.warning("""
-                            **⚠️ Resíduos não normais detectados:**
-                            - Considere transformar a variável resposta
-                            - Verifique a necessidade de modelos não lineares
-                            - Avalie a presença de outliers influentes
-                            """)
-                        
-                        if analise_residuos['homocedasticidade']['interpretacao'] == "Heterocedástico":
-                            st.warning("""
-                            **⚠️ Heterocedasticidade detectada:**
-                            - A variância dos resíduos não é constante
-                            - Considere usar modelos robustos
-                            - Transformações na variável resposta podem ajudar
-                            """)
-                        
-                        if analise_residuos['outliers']['percentual'] > 5:
-                            st.warning("""
-                            **⚠️ Muitos outliers nos resíduos:**
-                            - Verifique a qualidade dos dados
-                            - Considere remover ou tratar outliers
-                            - Avalie se há pontos influentes
-                            """)
         
         elif tipo_analise_avancada == "Análise Bayesiana (A/B Testing)":
             st.subheader("🎲 Análise Bayesiana para A/B Testing")

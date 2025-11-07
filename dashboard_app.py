@@ -2308,7 +2308,7 @@ def main():
                 
                 if len(x_vals) > 1 and len(y_vals) > 1:
                     # Realizar análise de resíduos
-					if len(x_vals) >2 and len(y_vals) > 2: # Mínimo para regressão
+					if.len(x_vals) >2 and len(y_vals) > 2: # Mínimo para regressão
 						analise_residuos = analise_residuos_regressao_simples(x_vals, y_vals)
 					else:
 						st.warning("Dados insuficientes para análise de resíduos (mínimo 3 pontos)")

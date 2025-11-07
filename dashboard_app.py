@@ -887,10 +887,10 @@ def calcular_regressao_linear(x, y):
     
     return slope, intercept, r_squared
 
-# ========== NOVAS FUNÇÕES PARA ANÁLISE DE RESÍDUOS ==========
+# ========== FUNÇÕES CORRIGIDAS PARA ANÁLISE DE RESÍDUOS ==========
 
 def analise_residuos_regressao_simples(x, y):
-    """Análise completa de resíduos para regressão linear simples"""
+    """Análise completa de resíduos para regressão linear simples - VERSÃO CORRIGIDA"""
     try:
         # Calcular regressão
         slope, intercept, r_squared = calcular_regressao_linear(x, y)
@@ -902,13 +902,16 @@ def analise_residuos_regressao_simples(x, y):
         y_pred = slope * x + intercept
         residuos = y - y_pred
         
+        # CORREÇÃO: Converter para pandas Series para usar dropna()
+        residuos_series = pd.Series(residuos)
+        
         # Estatísticas dos resíduos
         stats_residuos = {
             'media': np.mean(residuos),
             'mediana': np.median(residuos),
             'desvio_padrao': np.std(residuos),
-            'assimetria': pd.Series(residuos).skew(),
-            'curtose': pd.Series(residuos).kurtosis(),
+            'assimetria': residuos_series.skew(),
+            'curtose': residuos_series.kurtosis(),
             'min': np.min(residuos),
             'max': np.max(residuos)
         }
@@ -917,12 +920,26 @@ def analise_residuos_regressao_simples(x, y):
         p_normalidade = teste_normalidade_manual(residuos)
         
         # Teste de homocedasticidade (correlação entre previsões e resíduos)
-        correlacao_previsoes_residuos = np.corrcoef(y_pred, residuos)[0, 1]
+        correlacao_previsoes_residuos = np.corrcoef(y_pred, residuos)[0, 1] if len(y_pred) > 1 and len(residuos) > 1 else 0
         
-        # Detecção de outliers nos resíduos
-        outliers_residuos, _ = detectar_outliers_zscore(pd.DataFrame({'residuos': residuos}), 'residuos')
-        n_outliers = len(outliers_residuos)
-        percentual_outliers = (n_outliers / len(residuos)) * 100
+        # Detecção de outliers nos resíduos - CORREÇÃO: usar array numpy
+        if len(residuos) > 0:
+            # Usar numpy para detectar outliers em vez de pandas
+            residuos_clean = residuos[~np.isnan(residuos)]
+            if len(residuos_clean) > 0:
+                mean_resid = np.mean(residuos_clean)
+                std_resid = np.std(residuos_clean)
+                if std_resid > 0:
+                    z_scores = np.abs((residuos_clean - mean_resid) / std_resid)
+                    n_outliers = np.sum(z_scores > 3)
+                else:
+                    n_outliers = 0
+            else:
+                n_outliers = 0
+        else:
+            n_outliers = 0
+            
+        percentual_outliers = (n_outliers / len(residuos)) * 100 if len(residuos) > 0 else 0
         
         return {
             'residuos': residuos,
@@ -941,82 +958,34 @@ def analise_residuos_regressao_simples(x, y):
         st.error(f"Erro na análise de resíduos: {str(e)}")
         return None
 
-def criar_graficos_residuos_completos(analise_residuos, x, y, var_x, var_y):
-    """Cria gráficos completos para análise de resíduos da regressão simples"""
+# ========== FUNÇÃO AUXILIAR CORRIGIDA ==========
+
+def teste_normalidade_manual(data):
+    """Teste de normalidade simplificado usando assimetria e curtose - VERSÃO CORRIGIDA"""
+    # CORREÇÃO: Converter para array numpy e remover NaNs
+    if isinstance(data, pd.Series):
+        data_clean = data.dropna().values
+    else:
+        data_clean = np.array(data)
+        data_clean = data_clean[~np.isnan(data_clean)]
     
-    residuos = analise_residuos['residuos']
-    previsoes = analise_residuos['previsoes']
+    if len(data_clean) < 3:
+        return 0.5  # Valor neutro se não há dados suficientes
     
-    # 1. Gráfico de dispersão com linha de regressão
-    fig_dispersao = go.Figure()
+    # Calcular assimetria manualmente
+    mean_val = np.mean(data_clean)
+    std_val = np.std(data_clean)
+    if std_val == 0:
+        return 0.5
     
-    # Pontos de dados
-    fig_dispersao.add_trace(go.Scatter(
-        x=x, y=y, mode='markers', name='Dados',
-        marker=dict(color='blue', size=6, opacity=0.6)
-    ))
+    skewness = np.mean(((data_clean - mean_val) / std_val) ** 3)
     
-    # Linha de regressão
-    x_range = np.linspace(min(x), max(x), 100)
-    y_pred_line = analise_residuos['slope'] * x_range + analise_residuos['intercept']
+    # Calcular curtose manualmente
+    kurtosis = np.mean(((data_clean - mean_val) / std_val) ** 4) - 3
     
-    fig_dispersao.add_trace(go.Scatter(
-        x=x_range, y=y_pred_line, mode='lines', 
-        name=f'Regressão (R² = {analise_residuos["r_squared"]:.3f})',
-        line=dict(color='red', width=3)
-    ))
-    
-    fig_dispersao.update_layout(
-        title=f"Regressão Linear: {var_y} vs {var_x}",
-        xaxis_title=var_x,
-        yaxis_title=var_y
-    )
-    
-    # 2. Resíduos vs Valores Preditos
-    fig_residuos_vs_previsoes = go.Figure()
-    fig_residuos_vs_previsoes.add_trace(go.Scatter(
-        x=previsoes, y=residuos, mode='markers', name='Resíduos',
-        marker=dict(color='blue', size=6)
-    ))
-    fig_residuos_vs_previsoes.add_hline(y=0, line_dash="dash", line_color="red")
-    fig_residuos_vs_previsoes.update_layout(
-        title="Resíduos vs Valores Preditos",
-        xaxis_title="Valores Preditos",
-        yaxis_title="Resíduos"
-    )
-    
-    # 3. Histograma dos resíduos
-    fig_histograma = px.histogram(
-        x=residuos, nbins=30, 
-        title="Distribuição dos Resíduos",
-        labels={'x': 'Resíduos', 'y': 'Frequência'}
-    )
-    fig_histograma.add_vline(x=0, line_dash="dash", line_color="red")
-    
-    # 4. Q-Q Plot dos resíduos
-    fig_qq = criar_qq_plot_correto(pd.Series(residuos))
-    fig_qq.update_layout(title="Q-Q Plot dos Resíduos")
-    
-    # 5. Resíduos vs Variável Independente
-    fig_residuos_vs_x = go.Figure()
-    fig_residuos_vs_x.add_trace(go.Scatter(
-        x=x, y=residuos, mode='markers', name='Resíduos',
-        marker=dict(color='blue', size=6)
-    ))
-    fig_residuos_vs_x.add_hline(y=0, line_dash="dash", line_color="red")
-    fig_residuos_vs_x.update_layout(
-        title=f"Resíduos vs {var_x}",
-        xaxis_title=var_x,
-        yaxis_title="Resíduos"
-    )
-    
-    return {
-        'dispersao_regressao': fig_dispersao,
-        'residuos_vs_previsoes': fig_residuos_vs_previsoes,
-        'histograma_residuos': fig_histograma,
-        'qq_plot': fig_qq,
-        'residuos_vs_x': fig_residuos_vs_x
-    }
+    # Estimativa simplificada de p-valor baseada na assimetria e curtose
+    p_value = max(0, 1 - (abs(skewness) + abs(kurtosis)) / 2)
+    return p_value
 
 def interpretar_analise_residuos(analise_residuos):
     """Fornece interpretação completa da análise de resíduos"""

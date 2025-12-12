@@ -2766,23 +2766,27 @@ def main():
             
             col_lim1, col_lim2, col_lim3 = st.columns(3)
             
-            #1. Alvo (Primeiro)
+            #1. LIE - Vem antes
             with col_lim1:
-                alvo_cap = st.number_input(
-                    "Alvo (Valor Ideal - Opcional):",
-                    value=float(lse_cap + lie_cap) / 2 if lse_cap != 0 and lie_cap != 0 else 0),
-                    key=generate_unique_key("alvo_cap", coluna_capabilidade)
-                )
-            
-            #2. LIE (Segundo)
-            with col_lim2:
                 lie_cap = st.number_input(
-                    "LIE (Limite Inferior de Especificação):",
+                    "LiE (Limite Inferior de Especificação):",
                     value=float(st.session_state.lie_values.get(coluna_capabilidade, 0)),
                     key=generate_unique_key("lie_cap", coluna_capabilidade)
                 )
             
-            #3. LSE (Terceiro)
+            #2. Alvo - Do meio
+            with col_lim2:
+                alvo_default = 0.0
+                if lse_cap != 0 and lie_cap != 0:
+                    alvo_default = (lse_cap + lie_cap) / 2
+                
+                alvo_cap = st.number_input(
+                    "Alvo (Valor Ideal - Opcional):",
+                    value=float(alvo_default),
+                    key=generate_unique_key("alvo_cap", coluna_capabilidade)
+                )
+            
+            #3. LSE - Vem no final
             with col_lim3:
                 lse_cap = st.number_input(
                     "LSE (Limite Superior de Especificação):",

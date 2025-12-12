@@ -2761,14 +2761,15 @@ def main():
                 key=generate_unique_key("capabilidade_col", "tab6")
             )
             
-            #1. Alvo (Primeiro)
             # Configuração dos limites
             st.subheader("🎯 Configuração dos Limites de Especificação")
             
             col_lim1, col_lim2, col_lim3 = st.columns(3)
+            
+            #1. Alvo (Primeiro)
             with col_lim1:
                 alvo_cap = st.number_input(
-                    "Alvo (Valor Ideal Opcional):",
+                    "Alvo (Valor Ideal - Opcional):",
                     value=float(lse_cap + lie_cap) / 2 if lse_cap != 0 and lie_cap != 0 else 0),
                     key=generate_unique_key("alvo_cap", coluna_capabilidade)
                 )

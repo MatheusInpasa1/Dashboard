@@ -2979,8 +2979,8 @@ with tab6:
                             
                             st.dataframe(referencia, use_container_width=True)
                             
-                    else:
-                        st.error("❌ Não foi possível calcular os índices de capabilidade. Verifique os dados e limites.")
+                        else:
+                            st.error("❌ Não foi possível calcular os índices de capabilidade. Verifique os dados e limites.")
                     
                 except Exception as e:
                     st.error(f"❌ Erro na análise de capabilidade: {str(e)}")

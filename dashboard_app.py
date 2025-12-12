@@ -1067,7 +1067,7 @@ def interpretar_analise_residuos(analise_residuos):
     
     # Normalidade
     if analise_residuos['p_normalidade'] > 0.05:
-        interpretacoes.append("✅ **Normalidade**: Os resíduos seguem distribuição normal")
+        interpretacoes.append("✅ **Normalidade**: Os resíduos seguim distribuição normal")
     else:
         interpretacoes.append("⚠️ **Normalidade**: Os resíduos não são normais")
     
@@ -2360,7 +2360,7 @@ def main():
                 
                 if len(x_vals) > 1 and len(y_vals) > 1:
                     # Realizar análise de resíduos
-                    if len(x_vals) > 2 and len(y_vals) > 2:  # CORREÇÃO: Removido o ponto após o if
+                    if len(x_vals) > 2 and len(y_vals) > 2:
                         analise_residuos = analise_residuos_regressao_simples(x_vals, y_vals)
                     else:
                         st.warning("Dados insuficientes para análise de resíduos (mínimo 3 pontos)")
@@ -2744,84 +2744,84 @@ def main():
                 st.error(f"❌ Erro ao gerar carta de controle: {str(e)}")
                 st.info("💡 **Dica**: Verifique se as colunas selecionadas contêm dados válidos.")
 
-# ========== ABA 6: ANÁLISE DE CAPABILIDADE ==========
-with tab6:
-    st.header("📊 Análise de Capabilidade do Processo")
-    
-    st.markdown("""
-    **Análise de Capabilidade** avalia a capacidade de um processo em produzir dentro dos limites de especificação.
-    Esta análise calcula índices como Cp, Cpk, Pp, Ppk e estima o percentual de produtos fora da especificação.
-    """)
-    
-    if colunas_numericas:
-        # Seleção da variável para análise
-        coluna_capabilidade = st.selectbox(
-            "Selecione a variável para análise de capabilidade:",
-            colunas_numericas,
-            key=generate_unique_key("capabilidade_col", "tab6")
-        )
+    # ========== ABA 6: ANÁLISE DE CAPABILIDADE ==========
+    with tab6:
+        st.header("📊 Análise de Capabilidade do Processo")
         
-        # Configuração dos limites - SOLUÇÃO CORRIGIDA
-        st.subheader("🎯 Configuração dos Limites de Especificação")
+        st.markdown("""
+        **Análise de Capabilidade** avalia a capacidade de um processo em produzir dentro dos limites de especificação.
+        Esta análise calcula índices como Cp, Cpk, Pp, Ppk e estima o percentual de produtos fora da especificação.
+        """)
         
-        col_lim1, col_lim2, col_lim3 = st.columns(3)
-        
-        # 1. ALVO (Primeiro) - usar valores padrão iniciais
-        with col_lim1:
-            # Obter valores da session state primeiro
-            lse_valor = float(st.session_state.lse_values.get(coluna_capabilidade, 0))
-            lie_valor = float(st.session_state.lie_values.get(coluna_capabilidade, 0))
-            
-            # Calcular alvo padrão
-            alvo_padrao = 0.0
-            if lse_valor != 0 and lie_valor != 0:
-                alvo_padrao = (lse_valor + lie_valor) / 2
-            
-            alvo_cap = st.number_input(
-                "Alvo (Valor Ideal - Opcional):",
-                value=alvo_padrao,
-                key=generate_unique_key("alvo_cap", coluna_capabilidade)
+        if colunas_numericas:
+            # Seleção da variável para análise
+            coluna_capabilidade = st.selectbox(
+                "Selecione a variável para análise de capabilidade:",
+                colunas_numericas,
+                key=generate_unique_key("capabilidade_col", "tab6")
             )
-        
-        # 2. LIE (Segundo)
-        with col_lim2:
-            lie_cap = st.number_input(
-                "LIE (Limite Inferior de Especificação):",
-                value=float(st.session_state.lie_values.get(coluna_capabilidade, 0)),
-                key=generate_unique_key("lie_cap", coluna_capabilidade)
-            )
-            # Atualizar session state
-            st.session_state.lie_values[coluna_capabilidade] = lie_cap
-        
-        # 3. LSE (Terceiro)
-        with col_lim3:
-            lse_cap = st.number_input(
-                "LSE (Limite Superior de Especificação):",
-                value=float(st.session_state.lse_values.get(coluna_capabilidade, 0)),
-                key=generate_unique_key("lse_cap", coluna_capabilidade)
-            )
-            # Atualizar session state
-            st.session_state.lse_values[coluna_capabilidade] = lse_cap
-        
-        # Botão para executar análise
-        if st.button("📈 Executar Análise de Capabilidade", use_container_width=True,
-                    key=generate_unique_key("executar_capabilidade", "tab6")):
             
-            # CORREÇÃO: Verificar se as variáveis foram definidas
-            try:
-                if 'lse_cap' not in locals():
-                    lse_cap = 0.0
-                if 'lie_cap' not in locals():
-                    lie_cap = 0.0
-            except:
-                lse_cap = 0.0
-                lie_cap = 0.0
+            # Configuração dos limites - SOLUÇÃO CORRIGIDA
+            st.subheader("🎯 Configuração dos Limites de Especificação")
             
-            # Verificação segura
-            if lse_cap == 0 and lie_cap == 0:
-                st.error("❌ É necessário definir pelo menos um limite de especificação (LSE ou LIE)")
-            else:
+            col_lim1, col_lim2, col_lim3 = st.columns(3)
+            
+            # 1. ALVO (Primeiro) - usar valores padrão iniciais
+            with col_lim1:
+                # Obter valores da session state primeiro
+                lse_valor = float(st.session_state.lse_values.get(coluna_capabilidade, 0))
+                lie_valor = float(st.session_state.lie_values.get(coluna_capabilidade, 0))
+                
+                # Calcular alvo padrão
+                alvo_padrao = 0.0
+                if lse_valor != 0 and lie_valor != 0:
+                    alvo_padrao = (lse_valor + lie_valor) / 2
+                
+                alvo_cap = st.number_input(
+                    "Alvo (Valor Ideal - Opcional):",
+                    value=alvo_padrao,
+                    key=generate_unique_key("alvo_cap", coluna_capabilidade)
+                )
+            
+            # 2. LIE (Segundo)
+            with col_lim2:
+                lie_cap = st.number_input(
+                    "LIE (Limite Inferior de Especificação):",
+                    value=float(st.session_state.lie_values.get(coluna_capabilidade, 0)),
+                    key=generate_unique_key("lie_cap", coluna_capabilidade)
+                )
+                # Atualizar session state
+                st.session_state.lie_values[coluna_capabilidade] = lie_cap
+            
+            # 3. LSE (Terceiro)
+            with col_lim3:
+                lse_cap = st.number_input(
+                    "LSE (Limite Superior de Especificação):",
+                    value=float(st.session_state.lse_values.get(coluna_capabilidade, 0)),
+                    key=generate_unique_key("lse_cap", coluna_capabilidade)
+                )
+                # Atualizar session state
+                st.session_state.lse_values[coluna_capabilidade] = lse_cap
+            
+            # Botão para executar análise
+            if st.button("📈 Executar Análise de Capabilidade", use_container_width=True,
+                        key=generate_unique_key("executar_capabilidade", "tab6")):
+                
+                # CORREÇÃO: Verificar se as variáveis foram definidas
                 try:
+                    if 'lse_cap' not in locals():
+                        lse_cap = 0.0
+                    if 'lie_cap' not in locals():
+                        lie_cap = 0.0
+                except:
+                    lse_cap = 0.0
+                    lie_cap = 0.0
+                
+                # Verificação segura
+                if lse_cap == 0 and lie_cap == 0:
+                    st.error("❌ É necessário definir pelo menos um limite de especificação (LSE ou LIE)")
+                else:
+                    try:
                         # Calcular índices de capabilidade
                         resultados = calcular_indices_capabilidade(
                             dados_processados, coluna_capabilidade, lse_cap, lie_cap
@@ -2981,13 +2981,13 @@ with tab6:
                             
                         else:
                             st.error("❌ Não foi possível calcular os índices de capabilidade. Verifique os dados e limites.")
-                    
-                except Exception as e:
-                    st.error(f"❌ Erro na análise de capabilidade: {str(e)}")
-                    st.info("💡 **Dica**: Verifique se os limites de especificação estão corretos e se há dados suficientes.")
-        
-        else:
-            st.warning("📊 Não há variáveis numéricas para análise de capabilidade.")
+                        
+                    except Exception as e:
+                        st.error(f"❌ Erro na análise de capabilidade: {str(e)}")
+                        st.info("💡 **Dica**: Verifique se os limites de especificação estão corretos e se há dados suficientes.")
+            
+            else:
+                st.warning("📊 Aguardando execução da análise de capabilidade...")
 
     # ========== ABA 7: ESTATÍSTICA AVANÇADAS ==========
     with tab7:

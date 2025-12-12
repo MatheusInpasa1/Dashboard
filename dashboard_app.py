@@ -987,6 +987,79 @@ def teste_normalidade_manual(data):
     p_value = max(0, 1 - (abs(skewness) + abs(kurtosis)) / 2)
     return p_value
 
+def criar_graficos_residuos_completos(analise_residuos, x_vals, y_vals, eixo_x, eixo_y):
+    """Cria gráficos completos para análise de resíduos"""
+    figuras = {}
+    
+    # 1. Gráfico de dispersão com linha de regressão
+    fig_dispersao = go.Figure()
+    fig_dispersao.add_trace(go.Scatter(
+        x=x_vals, y=y_vals, mode='markers', name='Dados',
+        marker=dict(color='blue', size=6)
+    ))
+    
+    # Linha de regressão
+    x_range = np.linspace(min(x_vals), max(x_vals), 100)
+    y_pred_line = analise_residuos['slope'] * x_range + analise_residuos['intercept']
+    fig_dispersao.add_trace(go.Scatter(
+        x=x_range, y=y_pred_line, mode='lines', name='Regressão',
+        line=dict(color='red', width=2)
+    ))
+    
+    fig_dispersao.update_layout(
+        title=f"Regressão: {eixo_y} vs {eixo_x}",
+        xaxis_title=eixo_x,
+        yaxis_title=eixo_y
+    )
+    figuras['dispersao_regressao'] = fig_dispersao
+    
+    # 2. Resíduos vs Previsões
+    fig_res_previsoes = go.Figure()
+    fig_res_previsoes.add_trace(go.Scatter(
+        x=analise_residuos['previsoes'], y=analise_residuos['residuos'],
+        mode='markers', name='Resíduos',
+        marker=dict(color='green', size=6)
+    ))
+    fig_res_previsoes.add_hline(y=0, line_dash="dash", line_color="red")
+    fig_res_previsoes.update_layout(
+        title="Resíduos vs Previsões",
+        xaxis_title="Previsões",
+        yaxis_title="Resíduos"
+    )
+    figuras['residuos_vs_previsoes'] = fig_res_previsoes
+    
+    # 3. Resíduos vs X
+    fig_res_x = go.Figure()
+    fig_res_x.add_trace(go.Scatter(
+        x=x_vals, y=analise_residuos['residuos'],
+        mode='markers', name='Resíduos',
+        marker=dict(color='orange', size=6)
+    ))
+    fig_res_x.add_hline(y=0, line_dash="dash", line_color="red")
+    fig_res_x.update_layout(
+        title=f"Resíduos vs {eixo_x}",
+        xaxis_title=eixo_x,
+        yaxis_title="Resíduos"
+    )
+    figuras['residuos_vs_x'] = fig_res_x
+    
+    # 4. Histograma dos resíduos
+    fig_hist = px.histogram(
+        x=analise_residuos['residuos'],
+        nbins=30,
+        title="Distribuição dos Resíduos",
+        labels={'x': 'Resíduos', 'y': 'Frequência'}
+    )
+    fig_hist.add_vline(x=0, line_dash="dash", line_color="red")
+    figuras['histograma_residuos'] = fig_hist
+    
+    # 5. Q-Q Plot dos resíduos
+    fig_qq = criar_qq_plot_correto(analise_residuos['residuos'])
+    fig_qq.update_layout(title="Q-Q Plot dos Resíduos")
+    figuras['qq_plot'] = fig_qq
+    
+    return figuras
+
 def interpretar_analise_residuos(analise_residuos):
     """Fornece interpretação completa da análise de resíduos"""
     
@@ -1782,27 +1855,6 @@ def criar_qq_plot_correto(data):
     
     return fig
 
-def teste_normalidade_manual(data):
-    """Teste de normalidade simplificado usando assimetria e curtose"""
-    data_clean = data.dropna()
-    if len(data_clean) < 3:
-        return 0.5  # Valor neutro se não há dados suficientes
-    
-    # Calcular assimetria manualmente
-    mean_val = np.mean(data_clean)
-    std_val = np.std(data_clean)
-    if std_val == 0:
-        return 0.5
-    
-    skewness = np.mean(((data_clean - mean_val) / std_val) ** 3)
-    
-    # Calcular curtose manualmente
-    kurtosis = np.mean(((data_clean - mean_val) / std_val) ** 4) - 3
-    
-    # Estimativa simplificada de p-valor baseada na assimetria e curtose
-    p_value = max(0, 1 - (abs(skewness) + abs(kurtosis)) / 2)
-    return p_value
-
 # ========== FUNÇÃO MAIN COMPLETA ==========
 
 def main():
@@ -2033,7 +2085,7 @@ def main():
                                     title=f"Relação Temporal de {coluna_valor}")
                 else:  # Boxplot Temporal
                     # Criar períodos mensais para boxplot
-                    dados_temp['Periodo'] = dados_temp[coluna_data].dt.to_period('M').astypes(str)
+                    dados_temp['Periodo'] = dados_temp[coluna_data].dt.to_period('M').astype(str)
                     fig = px.box(dados_temp, x='Periodo', y=coluna_valor,
                                 title=f"Distribuição Mensal de {coluna_valor}")
                 
@@ -2308,11 +2360,11 @@ def main():
                 
                 if len(x_vals) > 1 and len(y_vals) > 1:
                     # Realizar análise de resíduos
-					if.len(x_vals) > 2 and len(y_vals) > 2: # Mínimo para regressão
-						analise_residuos = analise_residuos_regressao_simples(x_vals, y_vals)
-					else:
-						st.warning("Dados insuficientes para análise de resíduos (mínimo 3 pontos)")
-						analise_residuos = None
+                    if len(x_vals) > 2 and len(y_vals) > 2:  # CORREÇÃO: Removido o ponto após o if
+                        analise_residuos = analise_residuos_regressao_simples(x_vals, y_vals)
+                    else:
+                        st.warning("Dados insuficientes para análise de resíduos (mínimo 3 pontos)")
+                        analise_residuos = None
                     
                     if analise_residuos:
                         # Criar gráficos de resíduos
